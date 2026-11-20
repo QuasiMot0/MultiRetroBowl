@@ -486,6 +486,10 @@
         }
       }
 
+      if (o.myTeam === poss && (ph === 'presnap' || ph === 'live') && window.GridSim && window.GridSim.routePreview) {
+        drawRoutes(window.GridSim.routePreview(s), ox, oy);
+      }
+
       var ball = s.ball;
       var ctrl = (ph === 'gameover' || ph === 'kick') ? null : findPlayer(s, o.controlledId);
       var ps = s.players || [];
@@ -592,6 +596,42 @@
     ctx.drawImage(lo, 0, 0, bufW, bufH, 0, 0, bufW * P, bufH * P);
   }
 
+  function drawRoutes(routes, ox, oy) {
+    if (!routes.length) return;
+    lctx.save();
+    lctx.lineJoin = 'round';
+    for (var i = 0; i < routes.length; i++) {
+      var route = routes[i], points = route.points;
+      var color = route.kind === 'block' ? 'rgba(255,255,255,0.45)' : route.kind === 'run' ? '#ffe23a' : '#b7f6ff';
+      lctx.setLineDash([5, 3]);
+      lctx.beginPath();
+      lctx.moveTo(Math.round(points[0].x * PPY) + ox, Math.round(points[0].y * PPY) + oy);
+      for (var j = 1; j < points.length; j++) {
+        lctx.lineTo(Math.round(points[j].x * PPY) + ox, Math.round(points[j].y * PPY) + oy);
+      }
+      lctx.lineWidth = 3;
+      lctx.strokeStyle = 'rgba(10,20,25,0.6)';
+      lctx.stroke();
+      lctx.lineWidth = 1;
+      lctx.strokeStyle = color;
+      lctx.stroke();
+
+      var end = points[points.length - 1], prev = points[points.length - 2];
+      var dx = end.x - prev.x, dy = end.y - prev.y, len = Math.hypot(dx, dy);
+      if (len < 0.01) continue;
+      var ex = Math.round(end.x * PPY) + ox, ey = Math.round(end.y * PPY) + oy;
+      var ux = dx / len, uy = dy / len;
+      var tail = route.kind === 'block' ? 0 : 5;
+      lctx.setLineDash([]);
+      lctx.beginPath();
+      lctx.moveTo(ex - ux * tail - uy * 3, ey - uy * tail + ux * 3);
+      lctx.lineTo(ex, ey);
+      lctx.lineTo(ex - ux * tail + uy * 3, ey - uy * tail - ux * 3);
+      lctx.stroke();
+    }
+    lctx.restore();
+  }
+
   function drawAim(a, ox, oy, now) {
     var dx = a.tx - a.qx, dy = a.ty - a.qy;
     var d = Math.sqrt(dx * dx + dy * dy);
@@ -602,7 +642,7 @@
     for (var i = 1; i < N; i++) {
       if ((i + shift) % 3 === 0) continue;
       var t = i / N;
-      var z = passHeight ? passHeight(d, t) : 0.72 * d * t * (1 - t) + (1 - t);
+      var z = passHeight ? passHeight(d, t) : 0.80 * d * t * (1 - t) + (1 - t);
       var px = Math.round((a.qx + dx * t) * PPY) + ox;
       var py = Math.round((a.qy + dy * t - z) * PPY) + oy;
       lctx.fillStyle = 'rgba(0,0,0,0.45)';           // drop shadow so the dots read on grass

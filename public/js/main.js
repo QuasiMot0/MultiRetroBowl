@@ -791,14 +791,14 @@
     var steering = st.active && st.id === id;
     if (steering) {
       var runSpeed = SPEEDS[id] || 6;
-      var spd = runSpeed * (vp.juking ? 1.35 : 1);
+      var spd = runSpeed * st.speed * (vp.juking ? 1.35 : 1);
       if (Sim && Sim.steer) {
         var accel = runSpeed / Sim.HUMAN_ACCEL_TIME * (vp.juking ? 2 : 1);
         Sim.steer(pred, st.x, st.y, spd, accel, dt, 0.3);
       } else {
         var dx = st.x - pred.x, dy = st.y - pred.y, d = Math.hypot(dx, dy);
         var scale = d > 0.3 ? spd / d : 0;
-        var ka = 1 - Math.exp(-dt / 0.22);
+        var ka = 1 - Math.exp(-dt / 0.29);
         pred.vx += (dx * scale - pred.vx) * ka;
         pred.vy += (dy * scale - pred.vy) * ka;
       }
@@ -962,8 +962,8 @@
     if (ph === 'live' && s.phaseTime < 3 && !Input.touchedThisPlay()) {
       var touch = window.matchMedia('(pointer: coarse)').matches;
       if (off) {
-        if (Input.canThrow(s)) hint = touch ? 'DRAG QB · PULL BACK & RELEASE WITH A SECOND TOUCH' : 'WASD TO MOVE · DRAG BACK & RELEASE TO THROW';
-        else if (Input.controlledCarrier(s)) hint = touch ? 'DRAG TO RUN · JUKE BEFORE CONTACT' : 'WASD TO RUN · SPACE TO JUKE';
+        if (Input.canThrow(s)) hint = touch ? 'THUMBSTICK TO MOVE · DRAG BACK & RELEASE TO THROW' : 'WASD TO MOVE · DRAG BACK & RELEASE TO THROW';
+        else if (Input.controlledCarrier(s)) hint = touch ? 'THUMBSTICK TO RUN · JUKE BEFORE CONTACT' : 'WASD TO RUN · SPACE TO JUKE';
       } else hint = touch ? 'DRAG TO MOVE · TAP A DEFENDER TO SWITCH' : 'WASD TO MOVE · SHIFT TO SWITCH';
     } else if (ph === 'kick') {
       hint = off ? 'TAP KICK WHEN THE NEEDLE IS IN THE GREEN' : 'OPPONENT IS KICKING...';

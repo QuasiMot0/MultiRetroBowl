@@ -28,10 +28,10 @@
   var KICK_LAG_WINDOW = 0.4;
   var MAX_LIVE = 12;
   var RUNOFF = 20;
-  var BALL_SPEED = 23.5;
-  var PASS_ARC = 0.18;
+  var BALL_SPEED = 23;
+  var PASS_ARC = 0.20;
   var MAX_THROW = 55;
-  var HUMAN_ACCEL_TIME = 0.22;
+  var HUMAN_ACCEL_TIME = 0.29;
   var BLITZ_RUSH_SPEED = 0.90;
   var TACKLE_DIST = 0.9;
   var BLOCK_DIST = 1.2;
@@ -106,7 +106,7 @@
   function makePlayer(id, side) {
     return {
       id: id, side: side, x: 0, y: 0, vx: 0, vy: 0, svx: 0, svy: 0,
-      tx: 0, ty: 0, hasTarget: false,
+      tx: 0, ty: 0, hasTarget: false, targetSpeed: 1,
       jukeT: 0, jukeCd: 0, recT: 0,
       job: null, manId: null, zx: 0, zy: 0, zr: 0, deep: false,
       route: null, routeIdx: 0, after: null,
@@ -246,6 +246,15 @@
       if (dist(p.x, p.y, p.hx, p.hy) > 9) far = true;
     });
     if (far) formation(g); // out of position (e.g. spot changed): set up instantly
+
+    // Set up the next scrimmage play here so the offense can see the run lane before the snap.
+    if (g.offPlay === 'punt' || g.offPlay === 'fg') return;
+    g.cpuOpenNeed = 2.0 + rand(g) * 1.4;
+    g.readNoise = {};
+    ELIGIBLE.forEach(function (id) { g.readNoise[id] = (rand(g) - 0.5) * 2.6; });
+    g.runHoleY = CY + (rand(g) < 0.5 ? -1 : 1) * (4.5 + rand(g) * 4.5);
+    g.misread = rand(g) < 0.16;
+    g.cpuFirstRead = 1.2 + rand(g) * 0.5;
   }
 
   function presnapMove(g, dt) {
@@ -266,13 +275,6 @@
     g.intended = null;
     g.lastCarrier = 'QB';
     g.carrierT = 0;
-    g.cpuOpenNeed = 2.0 + rand(g) * 1.4;
-    // the CPU QB misjudges coverage a little differently every play
-    g.readNoise = {};
-    ELIGIBLE.forEach(function (id) { g.readNoise[id] = (rand(g) - 0.5) * 2.6; });
-    g.runHoleY = CY + (rand(g) < 0.5 ? -1 : 1) * (4.5 + rand(g) * 4.5);
-    g.misread = rand(g) < 0.16;
-    g.cpuFirstRead = 1.2 + rand(g) * 0.5;
     var b = g.ball;
     b.state = 'held'; b.holder = 'QB'; b.z = 1;
     assignJobs(g);
@@ -365,6 +367,56 @@
 
   // ---------------------------------------------------------------- assignments
   function routePt(x, y) { return { x: clamp(x, 0.5, 119), y: clamp(y, 1.5, FIELD_W - 1.5) }; }
+  var RUN_APPROACH = -1, RUN_HOLE_EXIT = 2;
+
+  function receiverAssignment(play, id, x, y, L) {
+    var out = y < CY ? -1 : 1;
+    if (id === 'WR1' || id === 'WR2') {
+      if (play === 'slant') return { job: 'route', route: [routePt(x + 5, y), routePt(x + 35, y - out * 30)] };
+      if (play === 'deep') return { job: 'route', route: [routePt(x + 25, y)], after: { x: 1, y: out * 0.35 } };
+      if (play === 'screen') return { job: 'route', route: [routePt(x + 2.5, y)], thenBlock: true };
+      return { job: 'route', route: [routePt(x + 3, y - out)], thenBlock: true };
+    }
+    if (id === 'TE') {
+      if (play === 'slant') return { job: 'route', route: [routePt(x + 5, y), routePt(x + 5.5, y + out * 9)] };
+      if (play === 'deep') return { job: 'route', route: [routePt(x + 6, y), routePt(x + 6.5, y + out * 9)] };
+      if (play === 'screen') return { job: 'route', route: [routePt(L - 1.5, y + 3), routePt(L - 1.5, CY + 10)] };
+      return { job: 'block', blockId: 'LB', blockF: 0.6 };
+    }
+    if (play === 'slant') return { job: 'route', route: [routePt(L - 1.5, y - 7), routePt(L + 2, y - 12), routePt(L + 7, y - 13)] };
+    if (play === 'deep') return { job: 'protect' };
+    if (play === 'screen') return { job: 'route', route: [routePt(L - 3, y - 5), routePt(L - 2, CY - 11)] };
+    return { job: 'carry' };
+  }
+
+  function routePreview(s) {
+    var play = s.offPlay, L = los(s);
+    if (play !== 'slant' && play !== 'deep' && play !== 'screen' && play !== 'run') return [];
+    if (s.phase !== 'presnap') {
+      if (s.phase !== 'live') return [];
+      if (play === 'run') {
+        if (!s.ball || s.ball.state !== 'held' || s.ball.x >= L + RUN_HOLE_EXIT || s.phaseTime >= 2.5) return [];
+      } else if (!s.canThrow) return [];
+    }
+    var pos = formationPositions(s), paths = [];
+    ELIGIBLE.forEach(function (id) {
+      var start = pos[id], assignment = receiverAssignment(play, id, start[0], start[1], L);
+      var points = [{ x: start[0], y: start[1] }], kind;
+      if (assignment.route) {
+        points = points.concat(assignment.route);
+        if (assignment.after) {
+          var last = points[points.length - 1];
+          points.push(routePt(last.x + assignment.after.x * 20, last.y + assignment.after.y * 20));
+        }
+        kind = assignment.thenBlock ? 'block' : 'pass';
+      } else if (assignment.job === 'carry' && fin(s.runHoleY)) {
+        points.push(routePt(L + RUN_APPROACH, s.runHoleY), routePt(L + RUN_HOLE_EXIT, s.runHoleY));
+        kind = 'run';
+      } else return;
+      paths.push({ id: id, kind: kind, points: points });
+    });
+    return paths;
+  }
 
   function assignJobs(g) {
     var L = los(g), C = CY, play = g.offPlay, dp = g.defPlay;
@@ -379,43 +431,15 @@
     P(g, 'OL1').job = 'block'; P(g, 'OL1').blockId = 'DL1'; P(g, 'OL1').blockF = 0.4;
     P(g, 'OL2').job = 'block'; P(g, 'OL2').blockId = 'DL2'; P(g, 'OL2').blockF = 0.4;
     P(g, 'QB').job = 'qb';
-    ['WR1', 'WR2'].forEach(function (id) {
+    ELIGIBLE.forEach(function (id) {
       var p = P(g, id);
-      var out = p.y < C ? -1 : 1, inn = -out;
-      if (play === 'slant') {
-        p.job = 'route';
-        p.route = [routePt(p.x + 5, p.y), routePt(p.x + 5 + 30, p.y + inn * 30)];
-      } else if (play === 'deep') {
-        p.job = 'route';
-        p.route = [routePt(p.x + 25, p.y)];
-        p.after = { x: 1, y: out * 0.35 };
-      } else if (play === 'screen') {
-        p.job = 'route';
-        p.route = [routePt(p.x + 2.5, p.y)];
-        p.thenBlock = true;
-      } else {
-        p.job = 'route';
-        p.route = [routePt(p.x + 3, p.y + inn * 1)];
-        p.thenBlock = true;
-      }
-      if (play === 'slant' || play === 'deep') p.thenBlock = false;
+      var assignment = receiverAssignment(play, id, p.x, p.y, L);
+      p.job = assignment.job;
+      p.route = assignment.route || null;
+      p.after = assignment.after || null;
+      p.thenBlock = !!assignment.thenBlock;
+      if (assignment.blockId) { p.blockId = assignment.blockId; p.blockF = assignment.blockF; }
     });
-    var te = P(g, 'TE'), rb = P(g, 'RB');
-    var teOut = te.y < C ? -1 : 1;
-    te.thenBlock = false; rb.thenBlock = false;
-    if (play === 'slant') {
-      te.job = 'route'; te.route = [routePt(te.x + 5, te.y), routePt(te.x + 5.5, te.y + teOut * 9)];
-      rb.job = 'route'; rb.route = [routePt(L - 1.5, rb.y - 7), routePt(L + 2, rb.y - 12), routePt(L + 7, rb.y - 13)];
-    } else if (play === 'deep') {
-      te.job = 'route'; te.route = [routePt(te.x + 6, te.y), routePt(te.x + 6.5, te.y + teOut * 9)];
-      rb.job = 'protect';
-    } else if (play === 'screen') {
-      rb.job = 'route'; rb.route = [routePt(L - 3, rb.y - 5), routePt(L - 2, C - 11)];
-      te.job = 'route'; te.route = [routePt(L - 1.5, te.y + 3), routePt(L - 1.5, C + 10)];
-    } else { // run
-      rb.job = 'carry';
-      te.job = 'block'; te.blockId = 'LB'; te.blockF = 0.6;
-    }
     // defense
     var dl = ['DL1', 'DL2'];
     dl.forEach(function (id) { P(g, id).job = 'rush'; });
@@ -467,7 +491,7 @@
     // ball carrier
     if (carrier === p) {
       if (offHuman) {
-        if (p.hasTarget) return { x: p.tx, y: p.ty, m: 1, stop: 0.3, human: true };
+        if (p.hasTarget) return { x: p.tx, y: p.ty, m: p.targetSpeed, stop: 0.3, human: true };
         if (p.id === 'QB') return { x: p.x, y: p.y, m: 1, stop: 0.3, human: true };
         return { x: p.x + 10, y: p.y, m: 1, stop: 0.3, human: true };
       }
@@ -500,7 +524,7 @@
     // pre-throw jobs
     if (p.job === 'carry') {
       // RB on run play: take the handoff on the way to the hole
-      return { x: L - 1, y: g.runHoleY, m: 1, stop: 0 };
+      return { x: L + RUN_APPROACH, y: g.runHoleY, m: 1, stop: 0 };
     }
     if (p.job === 'protect') {
       var qb = P(g, 'QB');
@@ -605,7 +629,7 @@
     var ax = 1, ay = 0;
     // run play: hit the hole first
     if (g.offPlay === 'run' && p.id === 'RB' && g.carrierT < 0.9 && p.x < ctx.L + 1.5) {
-      return { x: ctx.L + 2, y: g.runHoleY, m: 1, stop: 0 };
+      return { x: ctx.L + RUN_HOLE_EXIT, y: g.runHoleY, m: 1, stop: 0 };
     }
     var nearD = Infinity, nearP = null;
     for (var i = 7; i < 14; i++) {
@@ -635,25 +659,24 @@
   function defBrain(g, d, ctx) {
     var carrier = ctx.carrier, ball = g.ball, defHuman = g.humans[1 - g.possession];
     if (defHuman && d.id === g.userDefenderId && d.hasTarget) {
-      return { x: d.tx, y: d.ty, m: 1, stop: 0.3, human: true };
+      return { x: d.tx, y: d.ty, m: d.targetSpeed, stop: 0.3, human: true };
     }
     if (ctx.pursuit && carrier) {
       // DBs need a beat to read the handoff before they come downhill
       var reading = g.handedOff && carrier.id === 'RB' && g.carrierT < 0.45 && d.job !== 'rush' && d.id !== 'LB';
-      if (!reading) return pursue(d, carrier);
+      if (!reading) return pursue(d, carrier, 0.43, 0.97);
     }
     if (ctx.air) {
       var dT = dist(d.x, d.y, ball.tx, ball.ty);
-      var react = d.job === 'man' ? 0.25 : 0.35;
+      var react = d.job === 'man' ? 0.32 : 0.42;
       if (ball.airT > react && dT < 10) return { x: ball.tx, y: ball.ty, m: 1, stop: 0.05 };
       if (d.job === 'rush') return { x: ball.tx, y: ball.ty, m: 0.6, stop: 0.5 };
     }
     var qb = P(g, 'QB');
     if (d.job === 'rush') {
-      var rush = pursue(d, carrier || qb);
       // Only the extra rushers ease off while attacking a QB in the pocket.
-      if (carrier === qb && g.defPlay === 'blitz' && (d.id === 'LB' || d.id === 'S1')) rush.m = BLITZ_RUSH_SPEED;
-      return rush;
+      var extraRush = carrier === qb && g.defPlay === 'blitz' && (d.id === 'LB' || d.id === 'S1');
+      return pursue(d, carrier || qb, 0.5, extraRush ? BLITZ_RUSH_SPEED : 1);
     }
     if (d.job === 'man' && d.manId) {
       var r = P(g, d.manId);
@@ -670,13 +693,13 @@
     return { x: d.x, y: d.y, m: 0.5, stop: 0.3 };
   }
 
-  function pursue(d, c) {
-    // estimate the intercept time, capped at 0.5s of lead
+  function pursue(d, c, maxLead, speed) {
+    // Estimate when the defender will reach the carrier, then cap the lead.
     var spd = SPEED[d.id] || 6;
     var t0 = pd(d, c) / spd;
     var t1 = dist(d.x, d.y, c.x + c.vx * t0, c.y + c.vy * t0) / spd;
-    var lead = Math.min(0.5, t1);
-    return { x: c.x + c.vx * lead, y: c.y + c.vy * lead, m: 1, stop: 0 };
+    var lead = Math.min(maxLead, t1);
+    return { x: c.x + c.vx * lead, y: c.y + c.vy * lead, m: speed, stop: 0 };
   }
 
   // short zone defenders each pick up a different receiver in their area
@@ -1050,7 +1073,7 @@
   }
 
   function coast(g, dt) {
-    var k = Math.exp(-dt * 5);
+    var k = Math.exp(-dt * 4.2);
     g.players.forEach(function (p) {
       p.vx *= k; p.vy *= k;
       if (Math.abs(p.vx) < 0.01) p.vx = 0;
@@ -1260,6 +1283,7 @@
         p.hasTarget = true;
         p.tx = clamp(msg.x, -3, 123);
         p.ty = clamp(msg.y, -3, FIELD_W + 3);
+        p.targetSpeed = fin(msg.speed) ? clamp(msg.speed, 0, 1) : 1;
         return;
       }
       case 'stop': {
@@ -1349,6 +1373,7 @@
       picked: [!!g.picks[0], !!g.picks[1]],
       offPlay: hidePlays ? null : (g.offPlay || null),
       defPlay: hidePlays ? null : (g.defPlay || null),
+      runHoleY: g.offPlay === 'run' && (g.phase === 'presnap' || g.phase === 'live') ? r2(g.runHoleY) : null,
       players: players,
       ball: {
         x: r2(b.x), y: r2(b.y), z: r2(Math.max(0, b.z)), state: b.state,
@@ -1381,6 +1406,7 @@
     steer: steer,
     passFlightTime: passFlightTime,
     passHeight: passHeight,
+    routePreview: routePreview,
     KICK_TIME: KICK_TIME,
     fgThreshold: function (ballOn) { return clamp(0.65 - (((100 - ballOn) + 17) - 20) * 0.012, 0.08, 0.6); }
   };

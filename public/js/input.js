@@ -12,7 +12,7 @@
   var movePointer = null, aimPointer = null;
   var waitingPointers = [];
   var moveKeys = { KeyW: false, KeyA: false, KeyS: false, KeyD: false };
-  var lastSendT = -Infinity, lastX = NaN, lastY = NaN;
+  var lastSendT = -Infinity, lastX = NaN, lastY = NaN, lastSpeed;
   var movingId = null;
   var lastPhase = null;
   var touchedThisPlay = false;
@@ -21,8 +21,9 @@
 
   var aim = { active: false, qx: 0, qy: 0, tx: 0, ty: 0, valid: false, pull: 0, lock: null, lx: 0, ly: 0 };
   // where the finger is currently steering our player (field yards), for client-side prediction
-  var steer = { active: false, id: null, x: 0, y: 0 };
+  var steer = { active: false, id: null, x: 0, y: 0, speed: 1 };
   var selectedDefender = null, selectHoldUntil = 0;
+  var stick = { el: null, thumb: null, id: null, x: 0, y: 0, speed: 0, available: false };
 
   var btn = { juke: null, sw: null, kick: null };
   var vis = { juke: null, sw: null, kick: null, cool: null };
@@ -67,6 +68,11 @@
   // ------------------------------------------------------------------ gesture logic
   function assignPointer(p, s) {
     p.startX = p.x; p.startY = p.y;
+    if (stick.available && p.type !== 'mouse' && isOffense(s) && s.controlledOffId === 'QB') {
+      if (aimPointer || !canThrow(s)) return false;
+      aimPointer = p;
+      return true;
+    }
     if (isOffense(s) && canThrow(s) && !aimPointer) {
       Render.screenToField(p.x, p.y, tmp);
       var qb = findP(s, 'QB');
@@ -97,12 +103,15 @@
     if (best) selectDefender(best.id);
   }
 
-  function sendMove(id, x, y, now) {
+  function sendMove(id, x, y, now, speed) {
     if (now - lastSendT < MOVE_INTERVAL) return;
-    if (movingId === id && Math.abs(x - lastX) < 0.08 && Math.abs(y - lastY) < 0.08) return;
+    if (speed !== undefined) speed = Math.round(speed * 100) / 100;
+    if (movingId === id && speed === lastSpeed && Math.abs(x - lastX) < 0.08 && Math.abs(y - lastY) < 0.08) return;
     movingId = id;
-    lastX = x; lastY = y; lastSendT = now;
-    send({ t: 'move', x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100 });
+    lastX = x; lastY = y; lastSendT = now; lastSpeed = speed;
+    var msg = { t: 'move', x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100 };
+    if (speed !== undefined) msg.speed = speed;
+    send(msg);
   }
 
   function stopMoving(s) {
@@ -137,7 +146,7 @@
       var lx = tx, ly = ty, T = 0;
       for (var k = 0; k < 3; k++) {
         var distance = Math.hypot(lx - qb.x, ly - qb.y);
-        T = flightTime ? flightTime(distance) : distance / 23.5;
+        T = flightTime ? flightTime(distance) : distance / 23;
         lx = tx + (best.vx || 0) * T * w; ly = ty + (best.vy || 0) * T * w;
       }
       tx = lx; ty = ly;
@@ -243,7 +252,7 @@
     } else if (p === movePointer) {
       movePointer = null;
       grab.key = null;
-      if (!keyX() && !keyY()) stopMoving(s);
+      if (stick.id === null && !keyX() && !keyY()) stopMoving(s);
     } else {
       waitingPointers.splice(waitingPointers.indexOf(p), 1);
     }
@@ -262,6 +271,57 @@
     grab.key = null;
     releasePointer(move); releasePointer(a);
     if (waitingPointers.length) waitingPointers.splice(0).forEach(releasePointer);
+    clearStick();
+  }
+
+  function clearStick() {
+    if (stick.id === null) return;
+    var id = stick.id;
+    stick.id = null;
+    stick.x = stick.y = stick.speed = 0;
+    stick.thumb.style.transform = '';
+    try { stick.el.releasePointerCapture(id); } catch (err) { /* ignore */ }
+  }
+
+  function readStick(e) {
+    var rect = stick.el.getBoundingClientRect();
+    var dx = e.clientX - rect.left - rect.width / 2, dy = e.clientY - rect.top - rect.height / 2;
+    var radius = rect.width * 0.34;
+    var distance = Math.hypot(dx, dy);
+    var scale = distance > 0 ? Math.min(1, radius / distance) : 0;
+    stick.x = dx * scale; stick.y = dy * scale;
+    stick.speed = Math.max(0, (Math.min(1, distance / radius) - 0.12) / 0.88);
+    stick.thumb.style.transform = 'translate(' + stick.x + 'px,' + stick.y + 'px)';
+  }
+
+  function bindStick() {
+    stick.el = document.getElementById('moveStick');
+    if (!stick.el) return;
+    stick.thumb = stick.el.firstElementChild;
+    stick.available = !!(window.matchMedia && window.matchMedia('(any-pointer: coarse)').matches);
+    stick.el.addEventListener('pointerdown', function (e) {
+      var s = view();
+      if (!s || s.paused || !isOffense(s) || stick.id !== null || e.button !== 0 ||
+          (s.phase !== 'presnap' && s.phase !== 'live')) return;
+      e.preventDefault();
+      syncPhase(s);
+      if (opts.onTap) opts.onTap();
+      stick.id = e.pointerId;
+      touchedThisPlay = true;
+      readStick(e);
+      try { stick.el.setPointerCapture(stick.id); } catch (err) { /* ignore */ }
+    });
+    stick.el.addEventListener('pointermove', function (e) {
+      if (e.pointerId === stick.id) readStick(e);
+    });
+    function finishStick(e) {
+      if (e.pointerId !== stick.id) return;
+      clearStick();
+      if (!movePointer && !keyX() && !keyY()) stopMoving(view());
+    }
+    stick.el.addEventListener('pointerup', finishStick);
+    stick.el.addEventListener('pointercancel', finishStick);
+    stick.el.addEventListener('lostpointercapture', finishStick);
   }
 
   function clearKeys() {
@@ -362,7 +422,7 @@
   function onKeyUp(e) {
     if (!Object.prototype.hasOwnProperty.call(moveKeys, e.code)) return;
     moveKeys[e.code] = false;
-    if (!movePointer && !keyX() && !keyY()) stopMoving(view());
+    if (!movePointer && stick.id === null && !keyX() && !keyY()) stopMoving(view());
   }
 
   // ------------------------------------------------------------------ public
@@ -378,6 +438,7 @@
     btn.juke = document.getElementById('btnJuke');
     btn.sw = document.getElementById('btnSwitch');
     btn.kick = document.getElementById('btnKick');
+    bindStick();
     bindButton(btn.juke, doJuke);
     bindButton(btn.sw, doSwitch);
     bindButton(btn.kick, doKick);
@@ -408,11 +469,13 @@
     steer.active = false;
   }
 
-  function keyboardTarget(p, dx, dy, out) {
+  function directionTarget(p, dx, dy, out) {
     // Keep the target on the input ray near the boundaries, including the out-of-bounds margin.
-    var distance = 8 / Math.hypot(dx, dy);
-    if (dx) distance = Math.min(distance, dx > 0 ? 121.5 - p.x : p.x + 1.5);
-    if (dy) distance = Math.min(distance, dy > 0 ? FW + 1.5 - p.y : p.y + 1.5);
+    var length = Math.hypot(dx, dy);
+    dx /= length; dy /= length;
+    var distance = 8;
+    if (dx) distance = Math.min(distance, (dx > 0 ? 121.5 - p.x : p.x + 1.5) / Math.abs(dx));
+    if (dy) distance = Math.min(distance, (dy > 0 ? FW + 1.5 - p.y : p.y + 1.5) / Math.abs(dy));
     distance = Math.max(0, distance);
     out.x = p.x + dx * distance;
     out.y = p.y + dy * distance;
@@ -425,22 +488,29 @@
       selectedDefender = null;
     }
     var player = off ? controlledCarrier(s) : findDef(s, s.userDefenderId);
-    if (!player || (!movePointer && !dx && !dy)) {
+    var usingStick = off && stick.id !== null;
+    var speed;
+    if (!player || (!movePointer && !usingStick && !dx && !dy)) {
       stopMoving(s);
       return;
     }
     if (dx || dy) {
-      keyboardTarget(player, dx, dy, tmp);
+      directionTarget(player, dx, dy, tmp);
+    } else if (usingStick) {
+      speed = stick.speed;
+      if (speed > 0) directionTarget(player, stick.x, stick.y, tmp);
+      else { tmp.x = player.x; tmp.y = player.y; }
     } else {
       Render.screenToField(movePointer.x, movePointer.y, tmp);
       steerTarget(player, tmp.x, tmp.y, tmp);
       tmp.x = clampX(tmp.x); tmp.y = clampY(tmp.y);
     }
-    sendMove(player.id, tmp.x, tmp.y, now);
+    sendMove(player.id, tmp.x, tmp.y, now, speed);
     steer.active = true;
     steer.id = player.id;
     steer.x = tmp.x;
     steer.y = tmp.y;
+    steer.speed = speed === undefined ? 1 : speed;
   }
 
   /** Per-frame: update steering and aim independently. */
@@ -480,6 +550,7 @@
     }
     var showSwitch = !!(inGame && s && !off && (ph === 'live' || ph === 'presnap'));
     var showKick = !!(inGame && s && off && ph === 'kick');
+    setVis('stick', stick.el, !!(stick.available && inGame && off && !s.paused && (ph === 'presnap' || ph === 'live')));
     setVis('juke', btn.juke, showJuke);
     setVis('sw', btn.sw, showSwitch);
     setVis('kick', btn.kick, showKick);
@@ -508,7 +579,7 @@
     aim: aim,
     steer: steer,
     grab: grab,
-    isTouching: function () { return !!(movePointer || aimPointer || waitingPointers.length); },
+    isTouching: function () { return !!(movePointer || aimPointer || waitingPointers.length || stick.id !== null); },
     touchedThisPlay: function () { return touchedThisPlay; },
     qbHolds: qbHolds,
     canThrow: canThrow,

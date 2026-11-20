@@ -183,10 +183,10 @@ test('human move moves the QB; throw ignored past LOS rules for defense', () => 
   GridSim.input(g, 1, { t: 'throw', x: x0 + 20, y: y0 });
   assert.strictEqual(g.ball.state, 'held');
   GridSim.input(g, 0, { t: 'move', x: x0 - 3, y: y0 + 3 });
-  for (let i = 0; i < 9; i++) GridSim.step(g, DT);
+  for (let i = 0; i < 11; i++) GridSim.step(g, DT);
   assert.ok(qb.x < x0 - 0.8, `QB should move back (x ${x0} -> ${qb.x})`);
   assert.ok(qb.y > y0 + 0.8, `QB should move sideways (y ${y0} -> ${qb.y})`);
-  // quick acceleration: close to top speed within ~0.15s
+  // The QB accelerates up to his running speed.
   const sp = Math.hypot(qb.vx, qb.vy);
   assert.ok(sp > 5.0, `QB should be near top speed, got ${sp}`);
   // stop -> QB holds still
@@ -268,7 +268,7 @@ test('select changes userDefenderId only for defense and only to defenders', () 
   const s2 = P(g, 'S2');
   const y0 = s2.y;
   GridSim.input(g, 1, { t: 'move', x: s2.x, y: y0 + 6 });
-  for (let i = 0; i < 12; i++) GridSim.step(g, DT);
+  for (let i = 0; i < 14; i++) GridSim.step(g, DT);
   assert.ok(s2.y > y0 + 2, 'user defender should follow move target');
 });
 
@@ -402,6 +402,7 @@ test('interception in the endzone is a touchback', () => {
     if (p.side === 'off' && p.id !== 'QB') { p.x = 60; p.y = 50; }
   }
   for (const id of ['CB1', 'CB2', 'S1', 'S2', 'LB']) { const d = P(g, id); d.x = tx; d.y = ty; }
+  GridSim.input(g, 1, { t: 'move', x: tx, y: ty }); // keep the selected safety on the landing spot
   let gotInt = false;
   for (let attempt = 0; attempt < 30 && !gotInt; attempt++) {
     const copy = JSON.parse(JSON.stringify(g));

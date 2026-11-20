@@ -7,8 +7,9 @@ const GridSim = require('../shared/sim.js');
 
 const source = fs.readFileSync(path.join(__dirname, '../public/js/input.js'), 'utf8');
 
-function controls() {
+function controls({ mobile = false } = {}) {
   const canvas = new EventTarget();
+  const stick = new EventTarget();
   const window = new EventTarget();
   window.GridSim = GridSim;
   const captured = new Set();
@@ -21,12 +22,17 @@ function controls() {
     phase: 'live', possession: 0, canThrow: true, controlledOffId: 'QB', userDefenderId: 'LB',
     players: [qb, lb, safety], ball: { state: 'held', holder: 'QB', x: qb.x, y: qb.y }
   };
-  canvas.setPointerCapture = (id) => captured.add(id);
-  canvas.releasePointerCapture = (id) => {
-    if (captured.delete(id)) emit(canvas, 'lostpointercapture', { pointerId: id });
-  };
+  for (const surface of [canvas, stick]) {
+    surface.setPointerCapture = (id) => captured.add(id);
+    surface.releasePointerCapture = (id) => {
+      if (captured.delete(id)) emit(surface, 'lostpointercapture', { pointerId: id });
+    };
+  }
+  stick.firstElementChild = { style: {} };
+  stick.getBoundingClientRect = () => ({ left: 0, top: 0, width: 100, height: 100 });
+  window.matchMedia = () => ({ matches: mobile });
   vm.runInNewContext(source, {
-    window, document: { getElementById: () => null }, performance: { now: () => now },
+    window, document: { getElementById: (id) => id === 'moveStick' ? stick : null }, performance: { now: () => now },
     Render: { screenToField(x, y, out) { out.x = x; out.y = y; }, pxPerYard: () => 1 }
   });
   const input = window.Input;
@@ -36,6 +42,9 @@ function controls() {
     tick() { input.update(now += 55); },
     pointer(type, id, x, y, pointerType = 'touch') {
       emit(canvas, type, { pointerId: id, clientX: x, clientY: y, pointerType, button: 0, isPrimary: id === 1 });
+    },
+    stick(type, id, x, y) {
+      emit(stick, type, { pointerId: id, clientX: x, clientY: y, pointerType: 'touch', button: 0 });
     },
     key(type, code, extra = {}) { return emit(window, type, { code, ...extra }); },
     blur() { emit(window, 'blur'); }
@@ -65,6 +74,31 @@ test('a second touch throws while the first touch keeps steering', () => {
   assert.deepEqual(c.messages.at(-1), { t: 'move', x: 24, y: 23.7 });
   c.pointer('pointerup', 1, 24, 25);
   assert.deepEqual(c.messages.map((m) => m.t), ['move', 'throw', 'move', 'stop']);
+  assert.equal(c.captured.size, 0);
+});
+
+test('a mobile thumbstick sends proportional speed while a second touch aims and throws', () => {
+  const c = controls({ mobile: true });
+  c.view.phase = 'presnap';
+  c.stick('pointerdown', 1, 50, 50);
+  c.pointer('pointerdown', 2, 30, 25); // even a touch on the QB starts an aim
+  c.tick();
+  assert.deepEqual(c.messages, []);
+  c.view.phase = 'live';
+  c.tick();
+  assert.deepEqual(c.messages.at(-1), { t: 'move', x: 30, y: 25, speed: 0 });
+  c.stick('pointermove', 1, 31, 50);
+  c.pointer('pointermove', 2, 24, 25);
+  c.tick();
+  assert.deepEqual(c.messages.at(-1), { t: 'move', x: 22, y: 25, speed: 0.5 });
+  assert.equal(c.input.aim.valid, true);
+  c.pointer('pointerup', 2, 24, 25);
+  assert.equal(c.messages.at(-1).t, 'throw');
+  c.stick('pointermove', 1, 0, 50);
+  c.tick();
+  assert.deepEqual(c.messages.at(-1), { t: 'move', x: 22, y: 25, speed: 1 });
+  c.stick('pointercancel', 1, 0, 50);
+  assert.equal(c.messages.at(-1).t, 'stop');
   assert.equal(c.captured.size, 0);
 });
 

@@ -212,20 +212,34 @@ test('the QB glides to a stop and passes hang in the air', () => {
   until(g, (x) => x.phase === 'live');
   const qb = P(g, 'QB');
   S.input(g, 0, { t: 'move', x: qb.x - 10, y: qb.y });
-  for (let i = 0; i < 8; i++) S.step(g, DT);
+  for (let i = 0; i < 10; i++) S.step(g, DT);
   S.input(g, 0, { t: 'stop' });
   const x = qb.x;
   S.step(g, DT);
-  assert.ok(qb.vx < -4.5, 'the first braking step retains most of the QB momentum');
-  for (let i = 0; i < 8; i++) S.step(g, DT);
-  assert.ok(Math.abs(qb.vx) < 0.01 && x - qb.x > 0.4, 'the QB settles after a short glide');
+  assert.ok(qb.vx < -4.8, 'the first braking step retains most of the QB momentum');
+  for (let i = 0; i < 10; i++) S.step(g, DT);
+  assert.ok(Math.abs(qb.vx) < 0.01 && x - qb.x > 0.65, 'the QB settles after a short glide');
 
   // Throw from a stationary QB so the peak and range are easy to measure.
   const releaseX = qb.x;
-  S.input(g, 0, { t: 'throw', x: releaseX + 23.5, y: qb.y });
+  S.input(g, 0, { t: 'throw', x: releaseX + 23, y: qb.y });
   for (let i = 0; i < 15; i++) S.step(g, DT);
   assert.equal(g.ball.state, 'air');
-  assert.ok(Math.abs(g.ball.x - (releaseX + 11.75)) < 0.1, 'the pass is halfway to the target after 0.5s');
-  assert.ok(g.ball.z > 4.5, 'the pass uses a higher arc');
-  assert.ok(Math.abs(g.ball.z - S.passHeight(23.5, 0.5)) < 0.01, 'the preview follows the live ball arc');
+  assert.ok(Math.abs(g.ball.x - (releaseX + 11.5)) < 0.1, 'the pass is halfway to the target after 0.5s');
+  assert.ok(g.ball.z > 5, 'the pass uses a higher arc');
+  assert.ok(Math.abs(g.ball.z - S.passHeight(23, 0.5)) < 0.01, 'the preview follows the live ball arc');
+});
+
+test('analog movement sets a fraction of top speed and clamps the input', () => {
+  const g = S.createGame({ humans: [true, true], seed: 40 });
+  S.input(g, 0, { t: 'pick', play: 'slant' });
+  S.input(g, 1, { t: 'pick', play: 'zone' });
+  until(g, (x) => x.phase === 'live');
+  const qb = P(g, 'QB');
+  const target = { t: 'move', x: qb.x - 15, y: qb.y };
+  for (const [speed, expected] of [[0.5, -2.8], [2, -5.6], [-1, 0], [undefined, -5.6]]) {
+    S.input(g, 0, { ...target, speed });
+    for (let i = 0; i < 10; i++) S.step(g, DT);
+    assert.ok(Math.abs(qb.vx - expected) < 0.01);
+  }
 });
