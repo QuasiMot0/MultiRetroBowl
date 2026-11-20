@@ -704,7 +704,7 @@ function start(port = 0, opts = {}) {
 module.exports = { start, resolveStatic, lanAddresses };
 
 if (require.main === module) {
-  const port = Number(process.env.PORT) || 3000;
+  const port = Number(process.env.PORT || process.argv[2]) || 3000;
   start(port, { log: true }).then(({ port: p, close }) => {
     console.log('\n  Gridiron Duel is running!\n');
     console.log('  Open on this computer:  http://localhost:' + p);
@@ -722,7 +722,7 @@ if (require.main === module) {
     process.on('SIGTERM', shutdown);
   }).catch((err) => {
     if (err && err.code === 'EADDRINUSE') {
-      console.error('Port ' + port + ' is already in use. Try: PORT=3001 npm start');
+      console.error('Port ' + port + ' is already in use. Try: npm start -- 3001');
     } else {
       console.error(err);
     }
