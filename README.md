@@ -67,4 +67,5 @@ test/              node:test suites (npm test)
 ```
 
 Online rooms pause when a player disconnects and are kept for 5 minutes so they can reconnect
-(rejoin happens automatically). See `PLAN.md` for the full protocol.
+(rejoin happens automatically). See [AGENTS.md](AGENTS.md) for code entry points and test coverage,
+and [PLAN.md](PLAN.md) for the original design and protocol outline.
