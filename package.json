@@ -1,0 +1,17 @@
+{
+  "name": "gridiron-duel",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Retro pixel American football for phones - play a friend online or vs CPU.",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "test": "node --test \"test/*.test.js\""
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "^8.23.0"
+  }
+}

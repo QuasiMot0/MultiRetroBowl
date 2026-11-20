@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Gridiron Duel">
+  <meta name="application-name" content="Gridiron Duel">
+  <meta name="theme-color" content="#0b1020">
+  <meta name="format-detection" content="telephone=no">
+  <title>Gridiron Duel</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' shape-rendering='crispEdges'%3E%3Crect width='16' height='16' fill='%233c9541'/%3E%3Crect x='3' y='5' width='10' height='6' fill='%238b4a1c'/%3E%3Crect x='2' y='6' width='12' height='4' fill='%238b4a1c'/%3E%3Crect x='5' y='7' width='6' height='2' fill='%23fff'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <!-- ===== In-game HUD ===== -->
+  <div id="hud" class="ingame-only">
+    <div class="team t0" id="hudTeam0">
+      <span class="ballicon"></span>
+      <span class="name" id="hudName0">HOME</span>
+      <span class="you hidden" id="hudYou0">YOU</span>
+      <span class="score" id="hudScore0">0</span>
+    </div>
+    <div class="mid">
+      <div class="clock"><span id="hudQ">Q1</span> <span id="hudClock">2:30</span></div>
+      <div class="down" id="hudDown">1ST &amp; 10 · OWN 25</div>
+    </div>
+    <div class="team t1" id="hudTeam1">
+      <span class="score" id="hudScore1">0</span>
+      <span class="you hidden" id="hudYou1">YOU</span>
+      <span class="name" id="hudName1">AWAY</span>
+      <span class="ballicon"></span>
+    </div>
+    <button id="pauseBtn" class="pausebtn" aria-label="Pause">II</button>
+  </div>
+
+  <div id="banner" class="ingame-only hidden">
+    <div class="big" id="bannerBig"></div>
+    <div class="sub" id="bannerSub"></div>
+  </div>
+
+  <div id="presnapTag" class="ingame-only hidden"></div>
+  <div id="hint" class="ingame-only hidden"></div>
+
+  <!-- ===== Playcall overlay ===== -->
+  <div id="playcall" class="ingame-only hidden">
+    <div class="pc-head">
+      <span id="pcTitle">PICK A PLAY</span>
+      <span id="pcTimer">15</span>
+    </div>
+    <div id="pcSub" class="pc-sub"></div>
+    <div id="pcCards" class="pc-cards"></div>
+    <div id="pcWaiting" class="pc-waiting hidden">
+      <div id="pcPicked"></div>
+      <div class="blink">WAITING FOR OPPONENT...</div>
+    </div>
+  </div>
+
+  <!-- ===== Touch buttons ===== -->
+  <div id="controls" class="ingame-only">
+    <button id="btnJuke" class="ctl hidden">JUKE</button>
+    <button id="btnSwitch" class="ctl hidden">SWITCH</button>
+    <button id="btnKick" class="ctl big hidden">KICK!</button>
+  </div>
+
+  <!-- ===== Disconnect / pause overlays ===== -->
+  <div id="pausedOverlay" class="ingame-only hidden">
+    <div class="msg blink" id="pausedMsg">OPPONENT DISCONNECTED - WAITING...</div>
+    <button class="btn ghost small" id="btnPausedQuit">LEAVE GAME</button>
+  </div>
+
+  <div id="pauseMenu" class="screen hidden">
+    <div class="panel narrow">
+      <h2>PAUSED</h2>
+      <p class="note" id="pauseNote"></p>
+      <button class="btn green" id="btnResume">RESUME</button>
+      <button class="btn" id="btnPauseSound">SOUND: ON</button>
+      <button class="btn red" id="btnQuit">QUIT TO MENU</button>
+    </div>
+  </div>
+
+  <!-- ===== Menu ===== -->
+  <div id="screenMenu" class="screen">
+    <div class="menu-grid">
+      <div class="menu-left">
+        <h1 class="title">GRIDIRON<br>DUEL</h1>
+        <p class="tagline">7-ON-7 PIXEL FOOTBALL · PHONE VS PHONE</p>
+        <label class="lbl" for="nameInput">YOUR NAME</label>
+        <input id="nameInput" class="txt" type="text" maxlength="12" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" placeholder="PLAYER">
+        <p class="hint-url" id="urlHint"></p>
+      </div>
+      <div class="menu-right">
+        <button class="btn red" id="btnCreate">CREATE ROOM</button>
+        <button class="btn" id="btnJoinScreen">JOIN ROOM</button>
+        <button class="btn green" id="btnCpu">PLAY VS CPU</button>
+        <div class="row">
+          <button class="btn ghost small" id="btnHow">HOW TO PLAY</button>
+          <button class="btn ghost small" id="btnSound">SOUND: ON</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="screenCreate" class="screen hidden">
+    <div class="panel">
+      <p class="lbl">ROOM CODE</p>
+      <div class="code-big" id="createCode">····</div>
+      <p class="note">Tell your friend to open this same address and tap <b>JOIN</b>:</p>
+      <p class="addr" id="createAddr"></p>
+      <p class="status blink" id="createStatus">CONNECTING...</p>
+      <button class="btn ghost" id="btnCreateCancel">CANCEL</button>
+    </div>
+  </div>
+
+  <div id="screenJoin" class="screen hidden">
+    <div class="panel narrow">
+      <p class="lbl">ENTER ROOM CODE</p>
+      <input id="codeInput" class="txt code" type="text" maxlength="4" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD" inputmode="text">
+      <p class="status" id="joinStatus"></p>
+      <button class="btn red" id="btnJoin">JOIN</button>
+      <button class="btn ghost" id="btnJoinBack">BACK</button>
+    </div>
+  </div>
+
+  <div id="screenRejoin" class="screen hidden">
+    <div class="panel narrow">
+      <p class="status blink">REJOINING GAME...</p>
+      <button class="btn ghost" id="btnRejoinCancel">CANCEL</button>
+    </div>
+  </div>
+
+  <div id="screenHow" class="screen hidden">
+    <div class="panel wide scroll">
+      <h2>HOW TO PLAY</h2>
+      <div class="how-grid">
+        <div>
+          <h3 class="red-t">OFFENSE</h3>
+          <ul>
+            <li>Tap a play card. <b>Drag the QB</b> to move him.</li>
+            <li><b>Throw:</b> touch away from the QB, pull back like a slingshot, release. Put the <b>X</b> on a receiver and it locks on, leading him.</li>
+            <li>Your runner <b>follows your finger</b> (grab him and he rides above your thumb). Keep it ahead of him.</li>
+            <li><b>JUKE</b> just before contact: an untackleable burst, then a stumble.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="blue-t">DEFENSE</h3>
+          <ul>
+            <li>Pick a coverage: MAN, ZONE or BLITZ.</li>
+            <li>Your defender (yellow ring) <b>follows your finger</b>. Touch the runner to chase him; run into him to tackle.</li>
+            <li><b>Tap another defender</b> or hit <b>SWITCH</b> to take control of the one nearest the ball.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="yel-t">4TH DOWN</h3>
+          <ul>
+            <li>Go for it, PUNT, or kick a FIELD GOAL.</li>
+            <li>Field goal: tap <b>KICK</b> when the needle is in the green.</li>
+            <li>TD = 7 pts (auto extra point), FG = 3, safety = 2.</li>
+          </ul>
+        </div>
+      </div>
+      <button class="btn" id="btnHowBack">GOT IT</button>
+    </div>
+  </div>
+
+  <!-- ===== Game over ===== -->
+  <div id="screenOver" class="screen hidden">
+    <div class="panel">
+      <p class="lbl">FINAL</p>
+      <h2 class="over-title" id="overTitle">YOU WIN!</h2>
+      <div class="over-score">
+        <span class="red-t" id="overName0">HOME</span>
+        <span class="num" id="overScore0">0</span>
+        <span class="dash">-</span>
+        <span class="num" id="overScore1">0</span>
+        <span class="blue-t" id="overName1">AWAY</span>
+      </div>
+      <p class="status" id="overStatus"></p>
+      <div class="row">
+        <button class="btn green" id="btnRematch">REMATCH</button>
+        <button class="btn ghost" id="btnOverMenu">MENU</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="rotate">
+    <div class="phone"></div>
+    <p>ROTATE YOUR PHONE</p>
+    <p class="small">Gridiron Duel plays in landscape</p>
+  </div>
+
+  <div id="toast" class="hidden"></div>
+
+  <script src="/shared/sim.js"></script>
+  <script src="/js/net.js"></script>
+  <script src="/js/render.js"></script>
+  <script src="/js/input.js"></script>
+  <script src="/js/main.js"></script>
+</body>
+</html>
