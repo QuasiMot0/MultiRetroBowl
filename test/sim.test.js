@@ -125,8 +125,8 @@ test('short quarters still finish and scoring matches events', () => {
   const { snap, events } = runCpuGame(98765, { quarterLength: 40 });
   assert.strictEqual(snap.phase, 'gameover');
   const pts = snap.score[0] + snap.score[1];
-  // TD = 7, FG = 3, safety = 2 (safety has no dedicated event, so allow remainder)
-  const known = (events.td || 0) * 7 + (events.fg_good || 0) * 3;
+  // TD = 6, PAT = 1, FG = 3, safety = 2 (safety has no dedicated event, so allow remainder)
+  const known = (events.td || 0) * 6 + (events.pat_good || 0) + (events.fg_good || 0) * 3;
   assert.ok(pts >= known && (pts - known) % 2 === 0, `points ${pts} vs events ${JSON.stringify(events)}`);
 });
 
@@ -422,7 +422,7 @@ test('interception in the endzone is a touchback', () => {
   assert.ok(gotInt, 'expected at least one interception');
 });
 
-test('touchdown scores 7 and gives the ball to the other team', () => {
+test('touchdown scores 6 and offers an extra point before the other team gets the ball', () => {
   const g = GridSim.createGame({ humans: [true, true], seed: 20 });
   g.ballOn = 97;
   GridSim.input(g, 0, { t: 'pick', play: 'run' });
@@ -435,6 +435,10 @@ test('touchdown scores 7 and gives the ball to the other team', () => {
   GridSim.input(g, 0, { t: 'move', x: 115, y: rb.y });
   stepUntil(g, (x) => x.phase !== 'live', 300);
   assert.strictEqual(g.message, 'TOUCHDOWN!');
+  assert.deepStrictEqual(g.score, [6, 0]);
+  stepUntil(g, (x) => x.phase === 'kick');
+  assert.strictEqual(GridSim.snapshot(g).kickKind, 'pat');
+  GridSim.input(g, 0, { t: 'kick' });
   assert.deepStrictEqual(g.score, [7, 0]);
   stepUntil(g, (x) => x.phase === 'playcall');
   assert.strictEqual(g.possession, 1);

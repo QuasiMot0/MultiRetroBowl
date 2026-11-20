@@ -84,6 +84,38 @@ test('human QB: throwing into tight man coverage is risky', () => {
   assert.ok(ints / n <= 0.8, `but not always (${ints}/${n})`);
 });
 
+test('a contested deep catch is less reliable and more likely to be intercepted', () => {
+  const outcomes = (yards, covered) => {
+    const tally = { catch: 0, int: 0, incomplete: 0 };
+    for (let seed = 1; seed <= 512; seed++) {
+      const g = S.createGame({ humans: [true, true], seed });
+      S.input(g, 0, { t: 'pick', play: 'deep' });
+      S.input(g, 1, { t: 'pick', play: 'man' });
+      until(g, (x) => x.phase === 'live');
+      const qb = P(g, 'QB'), x = qb.x + yards, y = qb.y;
+      S.input(g, 0, { t: 'throw', x, y });
+      assert.equal(g.ball.state, 'air');
+      g.ball.airT = g.ball.dur;
+      for (const p of g.players) Object.assign(p, { x: 10, y: 5, vx: 0, vy: 0, svx: 0, svy: 0 });
+      Object.assign(P(g, 'WR1'), { x, y: y + 0.5 });
+      Object.assign(P(g, 'CB1'), { x, y: y - (covered ? 0.5 : 4) });
+      g.rngState = seed;
+      S.step(g, DT);
+      if (g.events.includes('catch')) tally.catch++;
+      else if (g.events.includes('int')) tally.int++;
+      else if (g.events.includes('incomplete')) tally.incomplete++;
+    }
+    return tally;
+  };
+
+  const open = outcomes(43, false), short = outcomes(12, true), deep = outcomes(43, true);
+  assert.ok(open.catch > 435 && open.int === 0);
+  assert.ok(short.catch < open.catch && short.int > 0);
+  assert.ok(deep.catch < short.catch && deep.catch > 230);
+  assert.ok(deep.int > short.int + 20 && deep.int < 113);
+  assert.ok(deep.incomplete > open.incomplete);
+});
+
 test('human RB: steering toward open space gains yards on average', () => {
   const gains = [];
   for (let i = 0; i < 60; i++) {
@@ -124,6 +156,27 @@ test('human RB: steering toward open space gains yards on average', () => {
   assert.ok(positive >= 0.6, 'share of positive runs ' + positive.toFixed(2));
   // but the defense still stops most runs short of a touchdown
   assert.ok(gains.filter((x) => x >= 75 - 1).length / gains.length < 0.4, 'not a TD every time');
+});
+
+test('running behind the called blocks gains yards against all three defensive calls', () => {
+  for (const defense of ['man', 'zone', 'blitz']) {
+    const gains = [];
+    for (let seed = 1; seed <= 64; seed++) {
+      const g = S.createGame({ humans: [true, true], seed });
+      S.input(g, 0, { t: 'pick', play: 'run' });
+      S.input(g, 1, { t: 'pick', play: defense });
+      until(g, (x) => x.phase === 'live');
+      const rb = P(g, 'RB'), start = g.ballOn;
+      while (g.phase === 'live') {
+        if (g.ball.holder === 'RB') S.input(g, 0, { t: 'move', x: rb.x + 15, y: g.runHoleY });
+        S.step(g, DT);
+      }
+      gains.push(gainOf(g, start, S.snapshot(g).events));
+    }
+    assert.ok(gains.filter((gain) => gain > 0).length >= 45, `${defense} allows consistent gains in the called lane`);
+    const mean = gains.reduce((sum, gain) => sum + gain, 0) / gains.length;
+    assert.ok(mean >= 2.25 && mean <= 6.5, `${defense} allowed ${mean.toFixed(2)} yards per run`);
+  }
 });
 
 test('human defender: running onto the carrier makes the tackle', () => {

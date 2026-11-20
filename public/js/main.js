@@ -657,7 +657,9 @@
             setTimeout(function () { Render.burst('confetti', cx0 + 2, cy0 + 4); }, 600);
           }
           break;
+        case 'pat_good':
         case 'fg_good': Sound.td(); Sound.crowd(false); break;
+        case 'pat_miss':
         case 'fg_miss': Sound.miss(); break;
         case 'gameover': Sound.whistle(true); break;
       }
@@ -919,7 +921,7 @@
     setClass(el.team1, 'poss', s.possession === 1 && ph !== 'gameover');
     setText(el.q, ph === 'gameover' ? 'FINAL' : (s.quarter > 4 ? 'OT' : 'Q' + (s.quarter || 1)));
     setText(el.clock, ph === 'gameover' ? '' : clockText(s.clock));
-    setText(el.down, downText(s));
+    setText(el.down, s.kickKind === 'pat' ? 'EXTRA POINT' : downText(s));
 
     // ---- playcall overlay
     var inPc = ph === 'playcall';

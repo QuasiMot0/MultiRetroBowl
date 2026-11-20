@@ -13,6 +13,8 @@ npm start          # serves on port 3000 (override with PORT=4000 npm start)
 npm test           # runs the test suite
 ```
 
+Use `npm start -- 3001` to start a separate server while another room is in play.
+
 On startup the server prints the URLs to open, for example:
 
 ```
@@ -41,7 +43,11 @@ Tip: on iOS use Share → "Add to Home Screen" (Android: menu → "Add to Home s
 - **Touch** — Use the left thumbstick on offense. Push it farther to move faster, and drag back and release on the field with a second finger to pass. Drag on the field to steer a defender.
 - **Keyboard and mouse** — Use **WASD** to move. Hold the left mouse button, drag back, and release to pass. Use **Space** to juke, switch defenders, or kick, depending on the play. **Shift** also switches defenders.
 
-On offense, light blue lines mark receiver routes and a gold line marks the handoff lane.
+On offense, each route arrow matches the color of the player's tag. WR1 is pink, WR2 is cyan, TE is lavender, and RB is gold. Dashes show where a player runs before blocking.
+
+On a run call, follow the gold handoff lane. On passing plays, a defender near the landing spot can break up the catch or intercept it, with more risk on deep throws into coverage.
+
+Every touchdown scores six points and leads to a timed extra-point kick for one more. Tap **Kick** or press **Space** when the needle is in the green.
 
 ## Play over the internet
 

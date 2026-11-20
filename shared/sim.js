@@ -22,6 +22,7 @@
   var PRESNAP_TIME = 1.0;
   var RESULT_TIME = 2.5;
   var KICK_TIME = 4;
+  var PAT_SPOT = 84;                // 33 yards with the game's kick placement
   // online kickers see the meter ~150-250ms late (interpolation + latency): a kick
   // message may carry `at`, the kick-phase elapsed time shown on their screen, and
   // it is honoured if it lies within this window before "now"
@@ -145,6 +146,8 @@
       ball: { x: 0, y: 0, z: 0, state: 'dead', holder: null, tx: 0, ty: 0, sx: 0, sy: 0, airT: 0, dur: 1, distance: 0 },
       userDefenderId: 'S1',
       kickMeter: null,
+      kickKind: null,
+      extraPointTeam: null,
       kickT: 0,
       kickLocked: false,
       cpuKickAt: 0,
@@ -190,6 +193,7 @@
       DL1: [L + 1, C - 1.2], DL2: [L + 1, C + 1.2], LB: [L + 5, C],
       CB1: [L + 5, C - 13], CB2: [L + 5, C + 13], S1: [L + 12, C - 8], S2: [L + 12, C + 8]
     };
+    if (g.offPlay === 'run' && fin(g.runHoleY)) pos.RB[1] = C + (g.runHoleY < C ? -3.4 : 3.4);
     // revealed at presnap: blitzers creep up to the line, zone corners bail
     if (g.phase === 'presnap' && g.defPlay === 'blitz') { pos.LB = [L + 4.75, C + 1.5]; pos.S1 = [L + 7.75, C - 5]; }
     if (g.phase === 'presnap' && g.defPlay === 'zone') { pos.CB1 = [L + 6.5, C - 12.5]; pos.CB2 = [L + 6.5, C + 12.5]; }
@@ -223,6 +227,7 @@
     g.offPlay = null;
     g.defPlay = null;
     g.kickMeter = null;
+    g.kickKind = null;
     formation(g);
     var off = g.possession, def = 1 - off;
     if (!g.humans[off]) g.picks[off] = cpuOffPick(g);
@@ -238,6 +243,17 @@
     g.phase = 'presnap';
     g.phaseTime = PRESNAP_TIME;
     g.message = ''; g.sub = '';
+
+    // Choose the lane before aligning the backfield and drawing the play.
+    if (g.offPlay !== 'punt' && g.offPlay !== 'fg') {
+      g.cpuOpenNeed = 2.0 + rand(g) * 1.4;
+      g.readNoise = {};
+      ELIGIBLE.forEach(function (id) { g.readNoise[id] = (rand(g) - 0.5) * 2.6; });
+      g.runHoleY = CY + (rand(g) < 0.5 ? -1 : 1) * (4.5 + rand(g) * 4.5);
+      g.misread = rand(g) < 0.16;
+      g.cpuFirstRead = 1.2 + rand(g) * 0.5;
+    }
+
     // players walk (not teleport) to their presnap alignment
     var pos = formationPositions(g);
     var far = false;
@@ -247,14 +263,6 @@
     });
     if (far) formation(g); // out of position (e.g. spot changed): set up instantly
 
-    // Set up the next scrimmage play here so the offense can see the run lane before the snap.
-    if (g.offPlay === 'punt' || g.offPlay === 'fg') return;
-    g.cpuOpenNeed = 2.0 + rand(g) * 1.4;
-    g.readNoise = {};
-    ELIGIBLE.forEach(function (id) { g.readNoise[id] = (rand(g) - 0.5) * 2.6; });
-    g.runHoleY = CY + (rand(g) < 0.5 ? -1 : 1) * (4.5 + rand(g) * 4.5);
-    g.misread = rand(g) < 0.16;
-    g.cpuFirstRead = 1.2 + rand(g) * 0.5;
   }
 
   function presnapMove(g, dt) {
@@ -281,8 +289,9 @@
     emit(g, 'snap');
   }
 
-  function enterKick(g) {
+  function enterKick(g, kind) {
     g.phase = 'kick';
+    g.kickKind = kind;
     g.phaseTime = KICK_TIME;
     g.kickT = 0;
     g.kickMeter = 0;
@@ -305,6 +314,17 @@
   }
 
   function finishResult(g) {
+    if (g.extraPointTeam !== null) {
+      g.possession = g.extraPointTeam;
+      g.extraPointTeam = null;
+      g.ballOn = PAT_SPOT;
+      g.down = 1; g.toGo = goalToGo(PAT_SPOT);
+      g.offPlay = null; g.defPlay = null;
+      g.message = ''; g.sub = '';
+      formation(g);
+      enterKick(g, 'pat');
+      return;
+    }
     var pend = g.pending;
     g.pending = null;
     if (pend) {
@@ -320,6 +340,7 @@
         g.phaseTime = 0;
         g.clock = 0;
         g.kickMeter = null;
+        g.kickKind = null;
         var s = g.score;
         g.message = s[0] === s[1] ? 'FINAL - TIE GAME' : 'FINAL';
         g.sub = g.teamNames[0] + ' ' + s[0] + ' - ' + s[1] + ' ' + g.teamNames[1];
@@ -664,11 +685,11 @@
     if (ctx.pursuit && carrier) {
       // DBs need a beat to read the handoff before they come downhill
       var reading = g.handedOff && carrier.id === 'RB' && g.carrierT < 0.45 && d.job !== 'rush' && d.id !== 'LB';
-      if (!reading) return pursue(d, carrier, 0.43, 0.97);
+      if (!reading) return pursue(d, carrier, 0.46, 0.99);
     }
     if (ctx.air) {
       var dT = dist(d.x, d.y, ball.tx, ball.ty);
-      var react = d.job === 'man' ? 0.32 : 0.42;
+      var react = d.job === 'man' ? 0.30 : 0.39;
       if (ball.airT > react && dT < 10) return { x: ball.tx, y: ball.ty, m: 1, stop: 0.05 };
       if (d.job === 'rush') return { x: ball.tx, y: ball.ty, m: 0.6, stop: 0.5 };
     }
@@ -890,8 +911,16 @@
       return endIncomplete(g);
     }
     if (rec) {
-      var pc = 0.92 - 0.3 * (def && dd <= 1.0 ? 1 : 0);
-      if (rand(g) < pc && rec.y >= 0 && rec.y <= FIELD_W && rec.x <= 120) {
+      // Nearby defenders contest the catch. A longer flight gives them more time
+      // to play the ball, while an open receiver keeps the same catch chance.
+      var pressure = clamp((1.6 - dd) / 0.6, 0, 1);
+      var leverage = clamp((rd - dd + 0.7) / 1.4, 0, 1);
+      var deep = clamp((b.distance - 18) / 24, 0, 1);
+      var catchChance = 0.92 - pressure * (0.30 + 0.09 * leverage + 0.055 * deep);
+      var pickChance = pressure * (0.02 + 0.07 * leverage + 0.075 * deep);
+      var roll = rand(g);
+      if (def && roll < pickChance) return endInterception(g, def);
+      if (roll < pickChance + catchChance && rec.y >= 0 && rec.y <= FIELD_W && rec.x <= 120) {
         b.state = 'held'; b.holder = rec.id; b.z = 1;
         rec.hasTarget = false;
         emit(g, 'catch');
@@ -914,11 +943,15 @@
 
   function endTouchdown(g, scorer) {
     endPlayCommon(g);
-    var off = g.possession;
-    g.score[off] += 7;
+    scoreTouchdown(g, g.possession, 'TOUCHDOWN!', scorer);
+  }
+
+  function scoreTouchdown(g, team, message, detail) {
+    g.score[team] += 6;
+    g.extraPointTeam = team;
     emit(g, 'td');
-    setPending(g, 1 - off, 25, 1, 10);
-    enterResult(g, 'TOUCHDOWN!', g.teamNames[off] + ' +7' + (scorer ? ', ' + scorer : '') + ', PAT good');
+    setPending(g, 1 - team, 25, 1, 10);
+    enterResult(g, message, g.teamNames[team] + ' +6' + (detail ? ', ' + detail : ''));
   }
 
   function endSafety(g) {
@@ -953,12 +986,7 @@
     if (x < 10) {
       // picked off in the offense's own endzone: defensive touchdown (pick six),
       // then the team that threw it gets the ball back at its own 25
-      var off = g.possession, dteam = 1 - off;
-      g.score[dteam] += 7;
-      emit(g, 'td');
-      setPending(g, off, 25, 1, 10);
-      enterResult(g, 'PICK SIX!', g.teamNames[dteam] + ' +7, ' + def.id + ' in the endzone, PAT good');
-      return;
+      return scoreTouchdown(g, 1 - g.possession, 'PICK SIX!', def.id + ' in the endzone');
     }
     if (x >= 110) { nb = 20; sub = 'Touchback'; }
     else { nb = clamp(Math.round(100 - (x - 10)), 1, 99); sub = g.teamNames[1 - g.possession] + ' ball'; }
@@ -1014,12 +1042,23 @@
   function fgDistance(g) { return (100 - g.ballOn) + 17; }
   function fgThreshold(g) { return clamp(0.65 - (fgDistance(g) - 20) * 0.012, 0.08, 0.6); }
 
-  function lockKick(g, value) {
+  function lockKick(g, value, expired) {
     if (g.phase !== 'kick' || g.kickLocked) return;
     g.kickLocked = true;
     g.kickMeter = clamp(value, -1, 1);
     var off = g.possession, distY = fgDistance(g);
-    if (Math.abs(g.kickMeter) < fgThreshold(g)) {
+    var wide = g.kickMeter < 0 ? 'wide left' : 'wide right';
+    var made = !expired && Math.abs(g.kickMeter) < fgThreshold(g);
+    if (g.kickKind === 'pat') {
+      if (made) {
+        g.score[off] += 1;
+        emit(g, 'pat_good');
+        enterResult(g, 'EXTRA POINT GOOD', g.teamNames[off] + ' +1');
+      } else {
+        emit(g, 'pat_miss');
+        enterResult(g, 'EXTRA POINT NO GOOD', expired ? 'Time expired' : 'Kick ' + wide);
+      }
+    } else if (made) {
       g.score[off] += 3;
       emit(g, 'fg_good');
       setPending(g, 1 - off, 25, 1, 10);
@@ -1029,7 +1068,7 @@
       emit(g, 'turnover');
       var nb = Math.max(20, 100 - g.ballOn);
       setPending(g, 1 - off, nb, 1, goalToGo(nb));
-      enterResult(g, 'NO GOOD', distY + '-yard attempt ' + (g.kickMeter < 0 ? 'wide left' : 'wide right'));
+      enterResult(g, 'NO GOOD', distY + '-yard attempt ' + wide);
     }
   }
 
@@ -1049,7 +1088,7 @@
         presnapMove(g, dt);
         if (g.phaseTime <= 0) {
           if (g.offPlay === 'punt') doPunt(g);
-          else if (g.offPlay === 'fg') enterKick(g);
+          else if (g.offPlay === 'fg') enterKick(g, 'fg');
           else startLive(g);
         }
         break;
@@ -1061,7 +1100,8 @@
         g.phaseTime = Math.max(0, KICK_TIME - g.kickT);
         g.kickMeter = Math.sin(g.kickT * 4);
         // CPU kicker taps when the swinging meter passes its (imperfect) aim point
-        if (!g.humans[g.possession] && g.kickT >= g.cpuKickAt && Math.abs(g.kickMeter - g.cpuKickVal) < 0.12) lockKick(g, g.kickMeter);
+        if (g.kickKind === 'pat' && g.kickT >= KICK_TIME) lockKick(g, g.kickMeter, true);
+        else if (!g.humans[g.possession] && g.kickT >= g.cpuKickAt && Math.abs(g.kickMeter - g.cpuKickVal) < 0.12) lockKick(g, g.kickMeter);
         else if (g.kickT >= KICK_TIME) lockKick(g, rand(g) * 2 - 1);
         break;
       case 'result':
@@ -1383,6 +1423,7 @@
       userDefenderId: g.userDefenderId,
       controlledOffId: controlled,
       kickMeter: fin(g.kickMeter) ? r2(g.kickMeter) : null,
+      kickKind: g.kickKind,
       canThrow: canThrow(g),
       message: String(g.message || ''),
       sub: String(g.sub || ''),

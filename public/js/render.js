@@ -11,6 +11,7 @@
   var X0 = -8, X1 = 128, Y0 = -12, Y1 = 65.3;   // cached world bounds (yards)
   var VIEW_YARDS = 32;                // target yards visible vertically: the whole formation fits under the HUD
   var BG = '#1b1f2e';
+  var ROUTE_COLORS = { WR1: '#ff93d6', WR2: '#80ecff', TE: '#d3b6ff', RB: '#ffe66b' };
 
   var TEAMS = [
     { main: '#d8372b', dark: '#8a1c14', pants: '#f0f0f0', ez: '#b02d23', ez2: '#93241b' },
@@ -486,8 +487,9 @@
         }
       }
 
+      var routeColors = null;
       if (o.myTeam === poss && (ph === 'presnap' || ph === 'live') && window.GridSim && window.GridSim.routePreview) {
-        drawRoutes(window.GridSim.routePreview(s), ox, oy);
+        routeColors = drawRoutes(window.GridSim.routePreview(s), ox, oy);
       }
 
       var ball = s.ball;
@@ -530,6 +532,7 @@
         if (p.juking && ((now / 70) | 0) % 2) lctx.globalAlpha = 0.45;
         lctx.drawImage(getSprite(team, p.id, facing, frame), sx - 6, sy - SPR_H);
         lctx.globalAlpha = 1;
+        if (routeColors && routeColors[p.id]) drawRouteTag(p.id, routeColors[p.id], sx, sy + 3);
         if (heldBy && p.id === heldBy) {
           lctx.drawImage(IMG_BALL_A, facing > 0 ? sx + 2 : sx - 9, sy - 10);
           drewHeld = true;
@@ -556,7 +559,7 @@
           lctx.drawImage(IMG_ARROW, ax - 3, ay);
         }
       }
-      // receivers out of view while you hold the ball as QB: team-colored edge pips
+      // Match off-screen receivers to the same color as their route.
       if (o.showReceivers) {
         for (i = 0; i < ps.length; i++) {
           var rp = ps[i];
@@ -567,7 +570,7 @@
           var exx = Math.max(4, Math.min(bufW - 5, rx)), eyy = Math.max(top + 3, Math.min(bufH - 4, ry));
           lctx.fillStyle = '#141414';
           lctx.fillRect(exx - 4, eyy - 4, 9, 9);
-          lctx.fillStyle = TEAMS[offTeam].main;
+          lctx.fillStyle = (routeColors && routeColors[rp.id]) || TEAMS[offTeam].main;
           lctx.fillRect(exx - 3, eyy - 3, 7, 7);
           lctx.fillStyle = '#ffffff';
           if (ry < top) lctx.fillRect(exx, eyy - 2, 1, 3); else if (ry > bufH) lctx.fillRect(exx, eyy, 1, 3);
@@ -597,31 +600,45 @@
   }
 
   function drawRoutes(routes, ox, oy) {
-    if (!routes.length) return;
+    if (!routes.length) return null;
+    var colors = {};
     lctx.save();
     lctx.lineJoin = 'round';
     for (var i = 0; i < routes.length; i++) {
       var route = routes[i], points = route.points;
-      var color = route.kind === 'block' ? 'rgba(255,255,255,0.45)' : route.kind === 'run' ? '#ffe23a' : '#b7f6ff';
-      lctx.setLineDash([5, 3]);
+      var block = route.kind === 'block';
+      var color = colors[route.id] = ROUTE_COLORS[route.id];
+      lctx.setLineDash(block ? [3, 3] : []);
       lctx.beginPath();
       lctx.moveTo(Math.round(points[0].x * PPY) + ox, Math.round(points[0].y * PPY) + oy);
       for (var j = 1; j < points.length; j++) {
         lctx.lineTo(Math.round(points[j].x * PPY) + ox, Math.round(points[j].y * PPY) + oy);
       }
-      lctx.lineWidth = 3;
-      lctx.strokeStyle = 'rgba(10,20,25,0.6)';
+      lctx.lineWidth = block ? 3 : 4;
+      lctx.strokeStyle = 'rgba(10,20,25,0.78)';
       lctx.stroke();
-      lctx.lineWidth = 1;
+      lctx.lineWidth = block ? 1 : 2;
       lctx.strokeStyle = color;
       lctx.stroke();
 
       var end = points[points.length - 1], prev = points[points.length - 2];
       var dx = end.x - prev.x, dy = end.y - prev.y, len = Math.hypot(dx, dy);
       if (len < 0.01) continue;
-      var ex = Math.round(end.x * PPY) + ox, ey = Math.round(end.y * PPY) + oy;
+      var ex = end.x * PPY + ox, ey = end.y * PPY + oy;
+      var px = prev.x * PPY + ox, py = prev.y * PPY + oy;
       var ux = dx / len, uy = dy / len;
-      var tail = route.kind === 'block' ? 0 : 5;
+      var tail = block ? 0 : 6;
+      // Point along the route at the screen edge if its destination is off camera.
+      if (!block && px > 8 && px < bufW - 8 && py > topInsetLo + 8 && py < bufH - 8) {
+        var reach = len * PPY;
+        if (ux > 0) reach = Math.min(reach, (bufW - 8 - px) / ux);
+        if (ux < 0) reach = Math.min(reach, (8 - px) / ux);
+        if (uy > 0) reach = Math.min(reach, (bufH - 8 - py) / uy);
+        if (uy < 0) reach = Math.min(reach, (topInsetLo + 8 - py) / uy);
+        ex = px + ux * reach;
+        ey = py + uy * reach;
+      }
+      ex = Math.round(ex); ey = Math.round(ey);
       lctx.setLineDash([]);
       lctx.beginPath();
       lctx.moveTo(ex - ux * tail - uy * 3, ey - uy * tail + ux * 3);
@@ -630,6 +647,15 @@
       lctx.stroke();
     }
     lctx.restore();
+    return colors;
+  }
+
+  function drawRouteTag(id, color, x, y) {
+    var width = textWidth(id, 1);
+    var left = x - Math.floor(width / 2);
+    lctx.fillStyle = '#101622';
+    lctx.fillRect(left - 2, y - 1, width + 4, 7);
+    drawText(lctx, id, left, y, 1, color);
   }
 
   function drawAim(a, ox, oy, now) {
@@ -679,7 +705,7 @@
     var x = Math.round((bufW - w) / 2), y = Math.round(bufH * 0.64);
     var dist = Math.round((100 - s.ballOn) + 17);
     var th = Math.max(0.08, Math.min(0.6, 0.65 - (dist - 20) * 0.012));
-    var label = dist + ' YD FIELD GOAL';
+    var label = dist + (s.kickKind === 'pat' ? ' YD EXTRA POINT' : ' YD FIELD GOAL');
     var lw = textWidth(label, 2);
     lctx.fillStyle = 'rgba(0,0,0,0.6)';
     lctx.fillRect(Math.min(x, Math.round((bufW - lw) / 2)) - 6, y - 22, Math.max(w, lw) + 12, h + 34);

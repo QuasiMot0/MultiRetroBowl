@@ -41,9 +41,11 @@ test('run preview guides the RB to the called lane, then clears past the hole', 
   const s = Sim.snapshot(g);
   const route = Sim.routePreview(s).find((path) => path.kind === 'run');
   assert.equal(route.id, 'RB');
+  assert.equal(Math.sign(route.points[0].y - Sim.FIELD_WIDTH / 2), Math.sign(s.runHoleY - Sim.FIELD_WIDTH / 2));
   assert.equal(route.points.at(-1).y, s.runHoleY);
   assert.ok(Math.abs(s.runHoleY - g.runHoleY) < 0.01);
   snapBall(g);
+  assert.ok(Math.abs(g.players.find((p) => p.id === 'RB').y - route.points[0].y) < 0.3);
   assert.equal(Sim.snapshot(g).runHoleY, s.runHoleY, 'the lane stays fixed at the snap');
 
   for (let i = 0; i < 15 && !g.handedOff; i++) Sim.step(g, DT);

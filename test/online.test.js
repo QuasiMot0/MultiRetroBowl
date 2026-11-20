@@ -146,7 +146,7 @@ function attachBot(c, team, seed, log) {
     }
 
     if (s.phase === 'kick') {
-      const key = s.quarter + ':' + s.clock + ':' + s.ballOn;
+      const key = s.quarter + ':' + s.clock + ':' + s.ballOn + ':' + s.kickKind;
       if (key !== kickKey) { kickKey = key; kicked = false; }
       if (off && !kicked && s.kickMeter != null && Math.abs(s.kickMeter) < 0.2) { kicked = true; send({ t: 'kick' }); }
       return;
@@ -245,7 +245,9 @@ function attachLedger(c, label) {
       const exp = [0, 0];
       const ev = s.events;
       const td = ev.filter((e) => e === 'td').length, fg = ev.filter((e) => e === 'fg_good').length;
-      exp[s.possession] += 7 * td + 3 * fg;
+      const pat = ev.filter((e) => e === 'pat_good').length;
+      exp[s.message === 'PICK SIX!' ? 1 - s.possession : s.possession] += 6 * td;
+      exp[s.possession] += 3 * fg + pat;
       if (s.phase === 'result' && prev.phase !== 'result' && s.message === 'SAFETY!') { exp[1 - s.possession] += 2; L.safeties++; }
       if (s.phase === 'result' && prev.phase !== 'result') L.results.push(s.message);
       const d0 = s.score[0] - prev.score[0], d1 = s.score[1] - prev.score[1];
@@ -300,7 +302,8 @@ describe('online: full game between two scripted humans', () => {
     assert.deepEqual(la.scoreErrors, [], 'score deltas must match td/fg/safety events');
     const ev = la.events;
     const total = fin.score[0] + fin.score[1];
-    assert.equal(total, 7 * (ev.td || 0) + 3 * (ev.fg_good || 0) + 2 * la.safeties, 'final score = 7*TD + 3*FG + 2*safety');
+    assert.equal(total, 6 * (ev.td || 0) + (ev.pat_good || 0) + 3 * (ev.fg_good || 0) + 2 * la.safeties,
+      'final score matches touchdowns, extra points, field goals, and safeties');
     assert.ok((ev.snap || 0) >= 6, 'several live plays were run: ' + JSON.stringify(ev));
     assert.ok((ev.throw || 0) >= 3, 'throws happened');
     assert.ok((ev.catch || 0) >= 1, 'at least one completion');

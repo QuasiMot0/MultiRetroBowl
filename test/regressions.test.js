@@ -206,9 +206,15 @@ describe('#7 interception in the offense\'s own endzone', () => {
       if (copy.message === 'INCOMPLETE') continue;
       gotInt = true;
       assert.equal(copy.message, 'PICK SIX!');
-      assert.deepEqual(copy.score, [0, 7]);
+      assert.deepEqual(copy.score, [0, 6]);
       assert.ok(snap.events.includes('int'));
       assert.ok(snap.events.includes('td'));
+      stepUntil(copy, (x) => x.phase === 'kick');
+      assert.equal(copy.possession, 1, 'the team that made the interception kicks the extra point');
+      GridSim.input(copy, 0, { t: 'kick' });
+      assert.equal(copy.phase, 'kick', 'the throwing team cannot take the extra point');
+      GridSim.input(copy, 1, { t: 'kick' });
+      assert.deepEqual(copy.score, [0, 7]);
       stepUntil(copy, (x) => x.phase === 'playcall');
       assert.equal(copy.possession, 0, 'team that threw it gets the ball back');
       assert.equal(copy.ballOn, 25);
@@ -362,6 +368,32 @@ describe('server + real sim: lag-compensated kick and quit', () => {
     assert.equal(res.s.message, 'FIELD GOAL GOOD', 'locked meter ' + res.s.kickMeter);
     assert.ok(Math.abs(res.s.kickMeter - seen.s.kickMeter) < 0.08);
     await a.close(); await b.close();
+  });
+
+  test('online touchdown and timed extra point reach both players', async () => {
+    const { a, b, created } = await pair(srv.port);
+    try {
+      const g = srv.rooms.get(created.code).game;
+      a.send({ type: 'input', msg: { t: 'pick', play: 'slant' } });
+      b.send({ type: 'input', msg: { t: 'pick', play: 'zone' } });
+      await a.wait((m) => m.type === 'state' && m.s.phase === 'live', 4000, 'snap');
+      P(g, 'QB').x = 111;
+
+      const td = await b.wait((m) => m.type === 'state' && m.s.events.includes('td'), 2000, 'touchdown');
+      assert.deepEqual(td.s.score, [6, 0]);
+      const seen = await a.wait((m) => m.type === 'state' && m.s.phase === 'kick' && m.s.kickKind === 'pat' &&
+        Math.abs(m.s.kickMeter) < 0.12 && m.s.phaseTime < 3.9, 5000, 'centered extra point meter');
+      a.send({ type: 'input', msg: { t: 'kick', at: GridSim.KICK_TIME - seen.s.phaseTime } });
+
+      const made = await b.wait((m) => m.type === 'state' && m.s.events.includes('pat_good'), 2000, 'made extra point');
+      assert.equal(made.s.message, 'EXTRA POINT GOOD');
+      assert.deepEqual(made.s.score, [7, 0]);
+      const next = await b.wait((m) => m.type === 'state' && m.s.phase === 'playcall' && m.s.possession === 1,
+        4000, 'opponent possession');
+      assert.equal(next.s.ballOn, 25);
+    } finally {
+      await a.close(); await b.close();
+    }
   });
 
   test('#2 quitting mid-game: opponent gets opponent_quit (not opponent_left)', async () => {
