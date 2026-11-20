@@ -38,8 +38,10 @@ Tip: on iOS use Share → "Add to Home Screen" (Android: menu → "Add to Home s
 
 ## Controls
 
-- **Touch** — Drag the QB to move. While holding that touch, pull back and release with a second finger to pass. To pass with one finger, start away from the QB. Drag to steer a runner or defender.
+- **Touch** — Use the left thumbstick on offense. Push it farther to move faster, and drag back and release on the field with a second finger to pass. Drag on the field to steer a defender.
 - **Keyboard and mouse** — Use **WASD** to move. Hold the left mouse button, drag back, and release to pass. Use **Space** to juke, switch defenders, or kick, depending on the play. **Shift** also switches defenders.
+
+On offense, light blue lines mark receiver routes and a gold line marks the handoff lane.
 
 ## Play over the internet
 

@@ -23,7 +23,7 @@ Gridiron Duel is an original 7-on-7 football game with a browser client, local C
 
 `snapshot()` drains queued game events. Use the same snapshot for every recipient of a server broadcast. The browser's predicted position is visual, while catches, tackles, legal throws, and scoring are decided by the sim. See [PLAN.md](PLAN.md) for the original design and protocol outline, and the implementation for current behavior.
 
-`GridSim.steer` drives simulation movement and online prediction. `GridSim.passFlightTime` and `GridSim.passHeight` keep CPU targeting, the aim preview, and the actual pass in sync.
+`GridSim.steer` drives simulation movement and online prediction. Thumbstick moves send a `speed` fraction alongside the move target. `GridSim.passFlightTime` and `GridSim.passHeight` keep CPU targeting, the aim preview, and the actual pass in sync. `GridSim.routePreview` reuses the sim's assignments to draw routes for the offensive player.
 
 ## Run and verify
 
@@ -34,6 +34,7 @@ Use `npm ci`, `npm start`, and `npm test` from the repository root. The network 
 | `test/sim.test.js` | Phase and input rules, scoring, standings, and seeded game behavior. |
 | `test/gameplay.test.js` | Play balance, run and pass outcomes, and pocket pressure. |
 | `test/input.test.js` | Pointer and keyboard input, simultaneous movement and aiming, and gesture cleanup. |
+| `test/routes.test.js` | Preview paths and their consistency with the sim's live assignments. |
 | `test/fuzz.test.js` | Random and malformed sim inputs, finite snapshots, and bounded phases. |
 | `test/server.test.js` | HTTP serving and WebSocket room behavior. `test/fixtures/` provides isolated static assets and a fake sim. |
 | `test/online.test.js` | Full games over real WebSockets against the real sim. |
