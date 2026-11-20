@@ -23,6 +23,8 @@ Gridiron Duel is an original 7-on-7 football game with a browser client, local C
 
 `snapshot()` drains queued game events. Use the same snapshot for every recipient of a server broadcast. The browser's predicted position is visual, while catches, tackles, legal throws, and scoring are decided by the sim. See [PLAN.md](PLAN.md) for the original design and protocol outline, and the implementation for current behavior.
 
+`GridSim.steer` drives simulation movement and online prediction. `GridSim.passFlightTime` and `GridSim.passHeight` keep CPU targeting, the aim preview, and the actual pass in sync.
+
 ## Run and verify
 
 Use `npm ci`, `npm start`, and `npm test` from the repository root. The network tests listen on loopback and choose ephemeral ports. To play on a phone, open the LAN URL printed by `npm start` while on the same Wi-Fi.

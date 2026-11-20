@@ -44,7 +44,7 @@ test('human QB: a well-aimed throw to an open receiver usually completes', () =>
       if (!best || open > best.open) best = { r, open };
     }
     if (best.open < 2.5) continue; // nobody open: a human would hold it
-    const T = Math.hypot(best.r.x - qb.x, best.r.y - qb.y) / 24;
+    const T = S.passFlightTime(Math.hypot(best.r.x - qb.x, best.r.y - qb.y));
     S.input(g, 0, { t: 'throw', x: best.r.x + best.r.vx * T, y: best.r.y + best.r.vy * T });
     assert.equal(g.ball.state, 'air');
     S.snapshot(g);
@@ -71,7 +71,7 @@ test('human QB: throwing into tight man coverage is risky', () => {
     until(g, (x) => x.phase !== 'live' || x.liveT >= at);
     if (g.phase !== 'live' || g.ball.holder !== 'QB') continue;
     const d = P(g, cover), qb = P(g, 'QB');
-    const T = Math.hypot(d.x - qb.x, d.y - qb.y) / 24;
+    const T = S.passFlightTime(Math.hypot(d.x - qb.x, d.y - qb.y));
     S.input(g, 0, { t: 'throw', x: d.x + d.vx * T, y: d.y + d.vy * T });
     S.snapshot(g);
     const ev = [];
@@ -182,16 +182,50 @@ test('human defender: contact with a non-juking carrier is always a tackle', () 
 
 test('human QB: the blitz leaves time for a hot throw, and more when dropping back', () => {
   for (const drop of [false, true]) {
-    let minT = Infinity;
-    for (let i = 0; i < 10; i++) {
-      const g = S.createGame({ humans: [true, true], seed: 40 + i });
-      S.input(g, 0, { t: 'pick', play: 'slant' });
-      S.input(g, 1, { t: 'pick', play: 'blitz' });
-      until(g, (x) => x.phase === 'live');
-      if (drop) S.input(g, 0, { t: 'move', x: 10 + g.ballOn - 9, y: 26.65 });
-      until(g, (x) => x.phase !== 'live');
-      minT = Math.min(minT, g.liveT);
+    let minBlitz = Infinity, maxBlitz = 0, minMan = Infinity;
+    for (const defense of ['blitz', 'man']) {
+      for (let i = 0; i < 10; i++) {
+        const g = S.createGame({ humans: [true, true], seed: 40 + i });
+        S.input(g, 0, { t: 'pick', play: 'slant' });
+        S.input(g, 1, { t: 'pick', play: defense });
+        until(g, (x) => x.phase === 'live');
+        if (drop) S.input(g, 0, { t: 'move', x: 10 + g.ballOn - 9, y: 26.65 });
+        until(g, (x) => x.phase !== 'live');
+        assert.ok(g.events.includes('sack'));
+        if (defense === 'blitz') {
+          minBlitz = Math.min(minBlitz, g.liveT);
+          maxBlitz = Math.max(maxBlitz, g.liveT);
+        } else {
+          minMan = Math.min(minMan, g.liveT);
+        }
+      }
     }
-    assert.ok(minT >= (drop ? 1.9 : 1.25), `${drop ? 'dropping' : 'standing'} QB sacked after only ${minT.toFixed(2)}s`);
+    assert.ok(minBlitz >= (drop ? 2.25 : 1.5), `QB sacked after only ${minBlitz.toFixed(2)}s`);
+    assert.ok(maxBlitz < minMan, 'blitz should still bring pressure sooner than man coverage');
   }
+});
+
+test('the QB glides to a stop and passes hang in the air', () => {
+  const g = S.createGame({ humans: [true, true], seed: 40 });
+  S.input(g, 0, { t: 'pick', play: 'slant' });
+  S.input(g, 1, { t: 'pick', play: 'zone' });
+  until(g, (x) => x.phase === 'live');
+  const qb = P(g, 'QB');
+  S.input(g, 0, { t: 'move', x: qb.x - 10, y: qb.y });
+  for (let i = 0; i < 8; i++) S.step(g, DT);
+  S.input(g, 0, { t: 'stop' });
+  const x = qb.x;
+  S.step(g, DT);
+  assert.ok(qb.vx < -4.5, 'the first braking step retains most of the QB momentum');
+  for (let i = 0; i < 8; i++) S.step(g, DT);
+  assert.ok(Math.abs(qb.vx) < 0.01 && x - qb.x > 0.4, 'the QB settles after a short glide');
+
+  // Throw from a stationary QB so the peak and range are easy to measure.
+  const releaseX = qb.x;
+  S.input(g, 0, { t: 'throw', x: releaseX + 23.5, y: qb.y });
+  for (let i = 0; i < 15; i++) S.step(g, DT);
+  assert.equal(g.ball.state, 'air');
+  assert.ok(Math.abs(g.ball.x - (releaseX + 11.75)) < 0.1, 'the pass is halfway to the target after 0.5s');
+  assert.ok(g.ball.z > 4.5, 'the pass uses a higher arc');
+  assert.ok(Math.abs(g.ball.z - S.passHeight(23.5, 0.5)) < 0.01, 'the preview follows the live ball arc');
 });

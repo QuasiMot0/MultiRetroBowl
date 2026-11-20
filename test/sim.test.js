@@ -212,7 +212,7 @@ test('human offense throw to an open receiver can complete', () => {
       let best = null;
       for (const id of ['WR1', 'WR2', 'TE', 'RB']) {
         const r = P(g, id);
-        const T = Math.hypot(r.x - qb.x, r.y - qb.y) / 24;
+        const T = GridSim.passFlightTime(Math.hypot(r.x - qb.x, r.y - qb.y));
         const tx = r.x + r.vx * T, ty = r.y + r.vy * T;
         let open = Infinity;
         for (const d of g.players.filter((p) => p.side === 'def')) open = Math.min(open, Math.hypot(d.x - tx, d.y - ty));

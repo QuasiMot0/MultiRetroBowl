@@ -28,8 +28,11 @@
   var KICK_LAG_WINDOW = 0.4;
   var MAX_LIVE = 12;
   var RUNOFF = 20;
-  var BALL_SPEED = 24;
+  var BALL_SPEED = 23.5;
+  var PASS_ARC = 0.18;
   var MAX_THROW = 55;
+  var HUMAN_ACCEL_TIME = 0.22;
+  var BLITZ_RUSH_SPEED = 0.90;
   var TACKLE_DIST = 0.9;
   var BLOCK_DIST = 1.2;
   // after a juke's burst the carrier plants his foot: roughly distance-neutral, so a juke
@@ -139,7 +142,7 @@
       offPlay: null,
       defPlay: null,
       players: [],
-      ball: { x: 0, y: 0, z: 0, state: 'dead', holder: null, tx: 0, ty: 0, sx: 0, sy: 0, airT: 0, dur: 1, peak: 0 },
+      ball: { x: 0, y: 0, z: 0, state: 'dead', holder: null, tx: 0, ty: 0, sx: 0, sy: 0, airT: 0, dur: 1, distance: 0 },
       userDefenderId: 'S1',
       kickMeter: null,
       kickT: 0,
@@ -188,7 +191,7 @@
       CB1: [L + 5, C - 13], CB2: [L + 5, C + 13], S1: [L + 12, C - 8], S2: [L + 12, C + 8]
     };
     // revealed at presnap: blitzers creep up to the line, zone corners bail
-    if (g.phase === 'presnap' && g.defPlay === 'blitz') { pos.LB = [L + 4, C + 1.5]; pos.S1 = [L + 7, C - 5]; }
+    if (g.phase === 'presnap' && g.defPlay === 'blitz') { pos.LB = [L + 4.75, C + 1.5]; pos.S1 = [L + 7.75, C - 5]; }
     if (g.phase === 'presnap' && g.defPlay === 'zone') { pos.CB1 = [L + 6.5, C - 12.5]; pos.CB2 = [L + 6.5, C + 12.5]; }
     for (var id in pos) { pos[id][0] = clamp(pos[id][0], 0.5, 119.5); pos[id][1] = clamp(pos[id][1], 0, FIELD_W); }
     return pos;
@@ -647,8 +650,10 @@
     }
     var qb = P(g, 'QB');
     if (d.job === 'rush') {
-      if (carrier) return pursue(d, carrier);
-      return pursue(d, qb);
+      var rush = pursue(d, carrier || qb);
+      // Only the extra rushers ease off while attacking a QB in the pocket.
+      if (carrier === qb && g.defPlay === 'blitz' && (d.id === 'LB' || d.id === 'S1')) rush.m = BLITZ_RUSH_SPEED;
+      return rush;
     }
     if (d.job === 'man' && d.manId) {
       var r = P(g, d.manId);
@@ -734,11 +739,11 @@
     for (var i = 0; i < 7; i++) {
       var r = g.players[i];
       if (!isElig(r) || r.job !== 'route') continue;
-      var T = pd(qb, r) / BALL_SPEED, px = r.x, py = r.y;
+      var T = passFlightTime(pd(qb, r)), px = r.x, py = r.y;
       for (var k = 0; k < 2; k++) {
         px = r.x + r.svx * T; py = r.y + r.svy * T;
         px = clamp(px, 0.5, 119.5); py = clamp(py, 1, FIELD_W - 1);
-        T = dist(qb.x, qb.y, px, py) / BALL_SPEED;
+        T = passFlightTime(dist(qb.x, qb.y, px, py));
       }
       var tdist = dist(qb.x, qb.y, px, py);
       if (tdist > MAX_THROW) continue;
@@ -780,7 +785,7 @@
       var alts = ELIGIBLE.map(function (id) { return P(g, id); }).filter(function (r) { return r.job === 'route' && r !== best.r; });
       if (alts.length) {
         var r = alts[Math.floor(rand(g) * alts.length)];
-        var T = pd(P(g, 'QB'), r) / BALL_SPEED;
+        var T = passFlightTime(pd(qb, r));
         g.misread = false;
         throwBall(g, r.x + r.svx * T, r.y + r.svy * T);
         return;
@@ -812,6 +817,9 @@
   }
 
   // ---------------------------------------------------------------- actions
+  function passFlightTime(distance) { return Math.max(0.15, distance / BALL_SPEED); }
+  function passHeight(distance, t) { return 4 * distance * PASS_ARC * t * (1 - t) + (1 - t); }
+
   function throwBall(g, x, y) {
     var qb = P(g, 'QB'), b = g.ball;
     x = clamp(x, 0, 120); y = clamp(y, 0, FIELD_W);
@@ -820,8 +828,8 @@
     b.state = 'air'; b.holder = null;
     b.sx = qb.x; b.sy = qb.y; b.x = qb.x; b.y = qb.y; b.z = 1;
     b.tx = x; b.ty = y; b.airT = 0;
-    b.dur = Math.max(0.15, d / BALL_SPEED);
-    b.peak = d * 0.15;
+    b.dur = passFlightTime(d);
+    b.distance = d;
     qb.hasTarget = false;
     // intended receiver: nearest eligible to the target
     var best = null, bd = 12;
@@ -1125,7 +1133,8 @@
       if (p.jukeT > 0) base *= 1.35;
       else if (p.recT > 0) base *= JUKE_REC_SPEED;
       if (p.side === 'def') base *= slow[p.id];
-      var accel = br.human ? SPEED[p.id] / 0.15 : (p.side === 'off' ? SPEED[p.id] / 0.3 : SPEED[p.id] / 0.35);
+      var accelTime = br.human ? HUMAN_ACCEL_TIME : (p.side === 'off' ? 0.30 : 0.35);
+      var accel = SPEED[p.id] / accelTime;
       if (p.jukeT > 0) accel *= 2;
       steer(p, fin(br.x) ? br.x : p.x, fin(br.y) ? br.y : p.y, base, accel, dt, br.stop || 0);
     }
@@ -1193,7 +1202,7 @@
       var t = Math.min(1, b.airT / b.dur);
       b.x = b.sx + (b.tx - b.sx) * t;
       b.y = b.sy + (b.ty - b.sy) * t;
-      b.z = 4 * b.peak * t * (1 - t) + (1 - t);
+      b.z = passHeight(b.distance, t);
       if (t >= 1) {
         resolveArrival(g);
         if (g.phase !== 'live') return;
@@ -1368,6 +1377,10 @@
     OFF_IDS: OFF_IDS.slice(),
     DEF_IDS: DEF_IDS.slice(),
     FIELD_WIDTH: FIELD_W,
+    HUMAN_ACCEL_TIME: HUMAN_ACCEL_TIME,
+    steer: steer,
+    passFlightTime: passFlightTime,
+    passHeight: passHeight,
     KICK_TIME: KICK_TIME,
     fgThreshold: function (ballOn) { return clamp(0.65 - (((100 - ballOn) + 17) - 20) * 0.012, 0.08, 0.6); }
   };

@@ -595,14 +595,14 @@
   function drawAim(a, ox, oy, now) {
     var dx = a.tx - a.qx, dy = a.ty - a.qy;
     var d = Math.sqrt(dx * dx + dy * dy);
-    var peak = d * 0.15;
     var N = Math.max(6, Math.min(32, (d * 0.9) | 0));
     var shift = (now / 70) | 0;
     var col = a.valid ? '#ffffff' : '#ff5a4a';
+    var passHeight = window.GridSim && window.GridSim.passHeight;
     for (var i = 1; i < N; i++) {
       if ((i + shift) % 3 === 0) continue;
       var t = i / N;
-      var z = 4 * peak * t * (1 - t) + (1 - t) * 1.0;
+      var z = passHeight ? passHeight(d, t) : 0.72 * d * t * (1 - t) + (1 - t);
       var px = Math.round((a.qx + dx * t) * PPY) + ox;
       var py = Math.round((a.qy + dy * t - z) * PPY) + oy;
       lctx.fillStyle = 'rgba(0,0,0,0.45)';           // drop shadow so the dots read on grass

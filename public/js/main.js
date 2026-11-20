@@ -786,12 +786,18 @@
     var st = Input.steer;
     var steering = st.active && st.id === id;
     if (steering) {
-      var spd = (SPEEDS[id] || 6) * (vp.juking ? 1.35 : 1);
-      var dx = st.x - pred.x, dy = st.y - pred.y, d = Math.sqrt(dx * dx + dy * dy);
-      var tvx = 0, tvy = 0;
-      if (d > 0.3) { tvx = dx / d * spd; tvy = dy / d * spd; }
-      var ka = 1 - Math.exp(-dt * 7);           // the sim accelerates humans in ~0.15s
-      pred.vx += (tvx - pred.vx) * ka; pred.vy += (tvy - pred.vy) * ka;
+      var runSpeed = SPEEDS[id] || 6;
+      var spd = runSpeed * (vp.juking ? 1.35 : 1);
+      if (Sim && Sim.steer) {
+        var accel = runSpeed / Sim.HUMAN_ACCEL_TIME * (vp.juking ? 2 : 1);
+        Sim.steer(pred, st.x, st.y, spd, accel, dt, 0.3);
+      } else {
+        var dx = st.x - pred.x, dy = st.y - pred.y, d = Math.hypot(dx, dy);
+        var scale = d > 0.3 ? spd / d : 0;
+        var ka = 1 - Math.exp(-dt / 0.22);
+        pred.vx += (dx * scale - pred.vx) * ka;
+        pred.vy += (dy * scale - pred.vy) * ka;
+      }
     } else {
       pred.vx = vp.vx || 0; pred.vy = vp.vy || 0;
     }

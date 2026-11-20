@@ -11,6 +11,7 @@ const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const WebSocket = require('ws');
 const { start } = require('../server/index.js');
+const { passFlightTime } = require('../shared/sim.js');
 
 const TIME_SCALE = 16;
 const QUARTER = 20;
@@ -183,7 +184,7 @@ function attachBot(c, team, seed, log) {
             for (const d of s.players) if (d.side === 'def') open = Math.min(open, hyp(d.x, d.y, r.x, r.y));
             if (!best || open > best.open) best = { r, open };
           }
-          const T = hyp(carrier.x, carrier.y, best.r.x, best.r.y) / 24;
+          const T = passFlightTime(hyp(carrier.x, carrier.y, best.r.x, best.r.y));
           thrown = true;
           send({ t: 'throw', x: best.r.x + best.r.vx * T, y: best.r.y + best.r.vy * T });
           return;

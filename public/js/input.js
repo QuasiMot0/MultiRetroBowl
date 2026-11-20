@@ -131,10 +131,12 @@
       if (rd < bd) { bd = rd; best = r; }
     }
     if (best) {
+      var flightTime = window.GridSim && window.GridSim.passFlightTime;
       var w = bd <= LOCK_FULL ? 1 : 1 - (bd - LOCK_FULL) / (LOCK_MAX - LOCK_FULL);
       var lx = tx, ly = ty, T = 0;
       for (var k = 0; k < 3; k++) {
-        T = Math.sqrt((lx - qb.x) * (lx - qb.x) + (ly - qb.y) * (ly - qb.y)) / 24;
+        var distance = Math.hypot(lx - qb.x, ly - qb.y);
+        T = flightTime ? flightTime(distance) : distance / 23.5;
         lx = tx + (best.vx || 0) * T * w; ly = ty + (best.vy || 0) * T * w;
       }
       tx = lx; ty = ly;
