@@ -1,4 +1,4 @@
-/* Gridiron Duel - touch / mouse controls -> sim input messages (window.Input) */
+/* Gridiron Duel - touch, mouse and keyboard controls -> sim input messages (window.Input) */
 (function () {
   'use strict';
 
@@ -9,10 +9,10 @@
   var canvas = null;
   var opts = null;                 // { send(msg), getView(), myTeam(), onTap() }
 
-  var pid = null;                  // active field pointer
-  var mode = null;                 // null | 'wait' | 'drag' | 'aim' | 'follow' | 'dead'
-  var sx = 0, sy = 0, cx = 0, cy = 0;
-  var lastSendT = 0, lastX = NaN, lastY = NaN;
+  var movePointer = null, aimPointer = null, waitingPointer = null;
+  var moveKeys = { KeyW: false, KeyA: false, KeyS: false, KeyD: false };
+  var lastSendT = -Infinity, lastX = NaN, lastY = NaN;
+  var movingId = null;
   var lastPhase = null;
   var touchedThisPlay = false;
   var jukeAt = -1e9;
@@ -20,8 +20,8 @@
 
   var aim = { active: false, qx: 0, qy: 0, tx: 0, ty: 0, valid: false, pull: 0, lock: null, lx: 0, ly: 0 };
   // where the finger is currently steering our player (field yards), for client-side prediction
-  var steer = { active: false, x: 0, y: 0 };
-  var selectHoldUntil = 0;         // after a defender switch, don't predict until the server agrees
+  var steer = { active: false, id: null, x: 0, y: 0 };
+  var selectedDefender = null, selectHoldUntil = 0;
 
   var btn = { juke: null, sw: null, kick: null };
   var vis = { juke: null, sw: null, kick: null, cool: null };
@@ -53,7 +53,7 @@
     }
     return m;
   }
-  /** The offensive player this client steers as a ball carrier (not the QB in the pocket). */
+  /** The offensive player this client steers as a ball carrier, including the QB. */
   function controlledCarrier(s) {
     if (!s || !s.ball || s.ball.state !== 'held') return null;
     var id = s.controlledOffId;
@@ -64,73 +64,60 @@
   function clampY(y) { return Math.max(-1.5, Math.min(FW + 1.5, y)); }
 
   // ------------------------------------------------------------------ gesture logic
-  function resolveMode(s, initial) {
-    if (!s || s.phase !== 'live') { mode = 'wait'; return; }
-    Render.screenToField(cx, cy, tmp);
-    if (isOffense(s)) {
-      if (canThrow(s)) {
-        var qb = findP(s, 'QB');
-        var dx = qb ? tmp.x - qb.x : 99, dy = qb ? tmp.y - qb.y : 99;
-        if (dx * dx + dy * dy <= 9) {
-          mode = 'drag';
-        } else {
-          mode = 'aim';
-          if (!initial) { sx = cx; sy = cy; }   // slingshot starts where the finger is now
-        }
-      } else if (controlledCarrier(s)) {
-        mode = 'follow';
-      } else {
-        mode = 'wait';
+  function assignPointer(p, s) {
+    p.startX = p.x; p.startY = p.y;
+    if (isOffense(s) && canThrow(s) && !aimPointer) {
+      Render.screenToField(p.x, p.y, tmp);
+      var qb = findP(s, 'QB');
+      var dx = qb ? tmp.x - qb.x : Infinity, dy = qb ? tmp.y - qb.y : Infinity;
+      // The first touch keeps the QB grab. A second touch takes the free role.
+      if (movePointer || p.type === 'mouse' || dx * dx + dy * dy > 9) {
+        aimPointer = p;
+        return true;
       }
-    } else {
-      mode = 'follow';
     }
+    if (movePointer) return false;
+    grab.key = null;
+    movePointer = p;
+    return true;
   }
 
-  function trySelect(s) {
-    if (!s || isOffense(s) || (s.phase !== 'live' && s.phase !== 'presnap' && s.phase !== 'playcall')) return;
-    Render.screenToField(cx, cy, tmp);
+  function trySelect(s, p) {
+    Render.screenToField(p.x, p.y, tmp);
     var best = null, bd = 1.5 * 1.5;
     var ps = s.players || [];
     for (var i = 0; i < ps.length; i++) {
-      var p = ps[i];
-      if (p.side !== 'def' || p.id === s.userDefenderId) continue;
-      var dx = p.x - tmp.x, dy = (p.y - 0.8) - tmp.y;    // sprite center is ~0.8yd above the feet
+      var dfn = ps[i];
+      if (dfn.side !== 'def' || dfn.id === s.userDefenderId) continue;
+      var dx = dfn.x - tmp.x, dy = (dfn.y - 0.8) - tmp.y;  // sprite center is ~0.8yd above the feet
       var d = dx * dx + dy * dy;
-      if (d < bd) { bd = d; best = p; }
+      if (d < bd) { bd = d; best = dfn; }
     }
-    if (best) {
-      send({ t: 'select', id: best.id });
-      // hold move messages briefly so they steer the newly selected defender
-      lastSendT = performance.now() + 150;
-      lastX = NaN;
-      selectHoldUntil = performance.now() + 450;
-    }
+    if (best) selectDefender(best.id);
   }
 
-  function sendMove(x, y, now, force) {
-    x = clampX(x); y = clampY(y);
-    if (!force) {
-      if (now - lastSendT < MOVE_INTERVAL) return;
-      if (Math.abs(x - lastX) < 0.08 && Math.abs(y - lastY) < 0.08) return;
-    }
+  function sendMove(id, x, y, now) {
+    if (now - lastSendT < MOVE_INTERVAL) return;
+    if (movingId === id && Math.abs(x - lastX) < 0.08 && Math.abs(y - lastY) < 0.08) return;
+    movingId = id;
     lastX = x; lastY = y; lastSendT = now;
     send({ t: 'move', x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100 });
   }
 
-  function sendStop() {
-    lastX = NaN; lastY = NaN;
-    send({ t: 'stop' });
+  function stopMoving(s) {
+    if (movingId && s && s.phase === 'live' && !s.paused) send({ t: 'stop' });
+    movingId = null;
+    steer.active = false;
   }
 
   var ELIGIBLE = { RB: 1, WR1: 1, WR2: 1, TE: 1 };
   var LOCK_FULL = 2.2, LOCK_MAX = 3.6;   // yd: aim-assist radius around a receiver
 
-  function computeAim(s) {
+  function computeAim(s, p) {
     var qb = findP(s, 'QB');
     if (!qb) { aim.active = false; return; }
     var ppy = Render.pxPerYard() || 1;
-    var dx = (sx - cx) / ppy, dy = (sy - cy) / ppy;
+    var dx = (p.startX - p.x) / ppy, dy = (p.startY - p.y) / ppy;
     var pull = Math.sqrt(dx * dx + dy * dy);
     var tx = qb.x + dx * 2.2, ty = qb.y + dy * 2.2;
     // aim assist: put the X on (or near) a receiver and the throw leads him by the
@@ -168,22 +155,22 @@
   // carrier you're chasing) is a plain "run here" target.
   var GRAB_R = 2.6, GRAB_LIFT = 1.3, GRAB_MAX = 2.6;
   var grab = { key: null, dx: 0, dy: 0 };
-  function steerTarget(s, fx, fy, out) {
-    var off = isOffense(s);
-    var me = off ? findP(s, s.controlledOffId) : findDef(s, s.userDefenderId);
-    if (!me) { out.x = fx; out.y = fy; return out; }
-    var key = (off ? 'o' : 'd') + me.id;
+  function steerTarget(me, fx, fy, out) {
+    var key = me.id;
     if (grab.key !== key) {
       // only the first player steered by this touch can be grabbed; after a SWITCH or
       // a handoff mid-touch the finger is a plain target again
       var first = grab.key === null;
       grab.key = key; grab.dx = 0; grab.dy = 0;
-      var ddx = me.x - fx, ddy = me.y - fy;
-      if (first && ddx * ddx + ddy * ddy <= GRAB_R * GRAB_R) {
-        ddy = Math.min(ddy, -GRAB_LIFT);
-        var dl = Math.sqrt(ddx * ddx + ddy * ddy);
-        if (dl > GRAB_MAX) { ddx *= GRAB_MAX / dl; ddy *= GRAB_MAX / dl; }
-        grab.dx = ddx; grab.dy = ddy;
+      if (first) {
+        Render.screenToField(movePointer.startX, movePointer.startY, out);
+        var ddx = me.x - out.x, ddy = me.y - out.y;
+        if (ddx * ddx + ddy * ddy <= GRAB_R * GRAB_R) {
+          ddy = Math.min(ddy, -GRAB_LIFT);
+          var dl = Math.sqrt(ddx * ddx + ddy * ddy);
+          if (dl > GRAB_MAX) { ddx *= GRAB_MAX / dl; ddy *= GRAB_MAX / dl; }
+          grab.dx = ddx; grab.dy = ddy;
+        }
       }
     }
     out.x = fx + grab.dx; out.y = fy + grab.dy;
@@ -198,61 +185,87 @@
 
   // ------------------------------------------------------------------ pointer handlers
   function onDown(e) {
-    if (opts.onTap) opts.onTap();
-    if (pid !== null) return;
     var s = view();
-    if (!s) return;
+    if (!s || s.paused || e.button !== 0) return;
+    syncPhase(s);
     e.preventDefault();
-    pid = e.pointerId;
-    try { canvas.setPointerCapture(pid); } catch (err) { /* ignore */ }
-    sx = cx = e.clientX; sy = cy = e.clientY;
-    touchedThisPlay = true;
-    grab.key = null;
+    if (opts.onTap) opts.onTap();
     if (s.phase === 'kick') {
       if (isOffense(s)) send(kickMsg(s));
-      mode = 'dead';
       return;
     }
-    if (!isOffense(s)) trySelect(s);
-    resolveMode(s, true);
+    var p = { id: e.pointerId, type: e.pointerType, x: e.clientX, y: e.clientY };
+    if (s.phase === 'live') {
+      if (!assignPointer(p, s)) return;
+    } else if ((s.phase === 'presnap' || s.phase === 'playcall') && !waitingPointer) {
+      waitingPointer = p;
+    } else return;
+    touchedThisPlay = true;
+    if (!isOffense(s)) trySelect(s, p);
+    try { canvas.setPointerCapture(p.id); } catch (err) { /* ignore */ }
+  }
+
+  function pointerFor(id) {
+    if (movePointer && movePointer.id === id) return movePointer;
+    if (aimPointer && aimPointer.id === id) return aimPointer;
+    if (waitingPointer && waitingPointer.id === id) return waitingPointer;
+    return null;
   }
 
   function onMove(e) {
-    if (e.pointerId !== pid) return;
+    var p = pointerFor(e.pointerId);
+    if (!p) return;
     e.preventDefault();
-    cx = e.clientX; cy = e.clientY;
+    p.x = e.clientX; p.y = e.clientY;
   }
 
   function finish(e, cancelled) {
-    if (e.pointerId !== pid) return;
-    cx = e.clientX; cy = e.clientY;
     var s = view();
-    if (mode === 'aim' && !cancelled && s && s.phase === 'live' && canThrow(s)) {
-      computeAim(s);
-      if (aim.valid) {
-        send({ t: 'throw', x: Math.round(aim.tx * 100) / 100, y: Math.round(aim.ty * 100) / 100 });
+    // A pre-snap pointer released before the first live frame has not started an aim.
+    var p = pointerFor(e.pointerId);
+    if (!p) return;
+    if (p === aimPointer) {
+      aimPointer = null;
+      if (!cancelled && s && !s.paused && s.phase === 'live' && isOffense(s) && canThrow(s)) {
+        p.x = e.clientX; p.y = e.clientY;
+        computeAim(s, p);
+        if (aim.active && aim.valid) {
+          send({ t: 'throw', x: Math.round(aim.tx * 100) / 100, y: Math.round(aim.ty * 100) / 100 });
+        }
       }
-    } else if (mode === 'drag' || mode === 'follow') {
-      if (s && s.phase === 'live') sendStop();
+      aim.active = false;
+    } else if (p === movePointer) {
+      movePointer = null;
+      grab.key = null;
+      if (!keyX() && !keyY()) stopMoving(s);
+    } else {
+      waitingPointer = null;
     }
-    try { canvas.releasePointerCapture(pid); } catch (err) { /* ignore */ }
-    pid = null;
-    mode = null;
-    aim.active = false;
-    steer.active = false;
-    grab.key = null;
+    releasePointer(p);
   }
 
-  /** Abort the current touch (page hidden, menu opened): never throws, stops the runner. */
-  function cancel() {
-    if (pid === null) return;
-    var s = view();
-    if ((mode === 'drag' || mode === 'follow') && s && s.phase === 'live') sendStop();
-    try { canvas.releasePointerCapture(pid); } catch (err) { /* ignore */ }
-    pid = null;
-    mode = null;
+  function releasePointer(p) {
+    if (!p) return;
+    try { canvas.releasePointerCapture(p.id); } catch (err) { /* ignore */ }
+  }
+
+  function clearPointers() {
+    var move = movePointer, a = aimPointer, wait = waitingPointer;
+    movePointer = aimPointer = waitingPointer = null;
     aim.active = false;
-    steer.active = false;
+    grab.key = null;
+    releasePointer(move); releasePointer(a); releasePointer(wait);
+  }
+
+  function clearKeys() {
+    moveKeys.KeyW = moveKeys.KeyA = moveKeys.KeyS = moveKeys.KeyD = false;
+  }
+
+  /** Abort input on blur, page hide, or menu open without releasing a pass. */
+  function cancel() {
+    clearPointers();
+    clearKeys();
+    stopMoving(view());
   }
 
   // ------------------------------------------------------------------ buttons
@@ -263,14 +276,22 @@
 
   function doJuke() {
     var s = view();
-    if (!s || s.phase !== 'live' || !isOffense(s)) return;
+    if (!s || s.paused || s.phase !== 'live' || !isOffense(s)) return;
     send({ t: 'juke' });
     jukeAt = performance.now();
   }
 
+  function selectDefender(id) {
+    send({ t: 'select', id: id });
+    selectedDefender = id;
+    selectHoldUntil = performance.now() + 450;
+    movingId = null;  // the sim clears the old defender's target on select
+    steer.active = false;
+  }
+
   function doSwitch() {
     var s = view();
-    if (!s || isOffense(s)) return;
+    if (!s || s.paused || isOffense(s) || (s.phase !== 'live' && s.phase !== 'presnap' && s.phase !== 'playcall')) return;
     var b = s.ball;
     if (!b) return;
     var ps = s.players || [];
@@ -281,16 +302,12 @@
       var dx = p.x - b.x, dy = p.y - b.y, d = dx * dx + dy * dy;
       if (d < bd) { bd = d; best = p; }
     }
-    if (best) {
-      send({ t: 'select', id: best.id });
-      lastX = NaN;   // make sure the new defender receives the finger target
-      selectHoldUntil = performance.now() + 450;
-    }
+    if (best) selectDefender(best.id);
   }
 
   function doKick() {
     var s = view();
-    if (!s || s.phase !== 'kick' || !isOffense(s)) return;
+    if (!s || s.paused || s.phase !== 'kick' || !isOffense(s)) return;
     send(kickMsg(s));
   }
 
@@ -306,21 +323,39 @@
     el.addEventListener('contextmenu', function (e) { e.preventDefault(); });
   }
 
-  function onKey(e) {
-    if (!opts || !view()) return;
+  function keyX() { return Number(moveKeys.KeyD) - Number(moveKeys.KeyA); }
+  function keyY() { return Number(moveKeys.KeyS) - Number(moveKeys.KeyW); }
+
+  function onKeyDown(e) {
+    var s = view();
+    if (!s || s.paused || e.altKey || e.ctrlKey || e.metaKey) return;
     var t = e.target;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
-    if (e.code === 'Space' || e.key === ' ') {
-      var s = view();
-      if (s.phase === 'kick') doKick(); else if (isOffense(s)) doJuke(); else doSwitch();
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    syncPhase(s);
+    if (Object.prototype.hasOwnProperty.call(moveKeys, e.code)) {
+      if ((s.phase === 'live' || s.phase === 'presnap') && (!e.repeat || moveKeys[e.code])) {
+        moveKeys[e.code] = true;
+        touchedThisPlay = true;
+        e.preventDefault();
+      }
+    } else if ((e.code === 'Space' || e.key === ' ') && (s.phase === 'live' || s.phase === 'kick')) {
       e.preventDefault();
-    } else if (e.key === 's' || e.key === 'S' || e.key === 'Shift') {
+      if (e.repeat) return;
+      if (s.phase === 'kick') doKick(); else if (isOffense(s)) doJuke(); else doSwitch();
+    } else if (e.repeat) return;
+    else if (e.key === 'Shift') {
       doSwitch();
     } else if (e.key === 'j' || e.key === 'J') {
       doJuke();
     } else if (e.key === 'k' || e.key === 'K') {
       doKick();
     }
+  }
+
+  function onKeyUp(e) {
+    if (!Object.prototype.hasOwnProperty.call(moveKeys, e.code)) return;
+    moveKeys[e.code] = false;
+    if (!movePointer && !keyX() && !keyY()) stopMoving(view());
   }
 
   // ------------------------------------------------------------------ public
@@ -331,7 +366,7 @@
     c.addEventListener('pointermove', onMove);
     c.addEventListener('pointerup', function (e) { finish(e, false); });
     c.addEventListener('pointercancel', function (e) { finish(e, true); });
-    c.addEventListener('lostpointercapture', function (e) { if (e.pointerId === pid) finish(e, true); });
+    c.addEventListener('lostpointercapture', function (e) { finish(e, true); });
     c.addEventListener('contextmenu', function (e) { e.preventDefault(); });
     btn.juke = document.getElementById('btnJuke');
     btn.sw = document.getElementById('btnSwitch');
@@ -339,45 +374,81 @@
     bindButton(btn.juke, doJuke);
     bindButton(btn.sw, doSwitch);
     bindButton(btn.kick, doKick);
-    window.addEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', cancel);
   }
 
-  /** Per-frame: convert the held finger into move targets / aim. */
+  function syncPhase(s) {
+    if (s.phase === lastPhase) return;
+    if (lastPhase === 'live') {
+      clearPointers();
+      clearKeys();
+    }
+    if (s.phase === 'presnap' || s.phase === 'playcall') touchedThisPlay = false;
+    if (s.phase === 'live' && waitingPointer) {
+      assignPointer(waitingPointer, s);
+      waitingPointer = null;
+    } else if (s.phase !== 'presnap' && s.phase !== 'playcall') {
+      clearPointers();
+    }
+    lastPhase = s.phase;
+    movingId = null;
+    lastSendT = -Infinity;
+    steer.active = false;
+  }
+
+  function keyboardTarget(p, dx, dy, out) {
+    // Keep the target on the input ray near the boundaries, including the out-of-bounds margin.
+    var distance = 8 / Math.hypot(dx, dy);
+    if (dx) distance = Math.min(distance, dx > 0 ? 121.5 - p.x : p.x + 1.5);
+    if (dy) distance = Math.min(distance, dy > 0 ? FW + 1.5 - p.y : p.y + 1.5);
+    distance = Math.max(0, distance);
+    out.x = p.x + dx * distance;
+    out.y = p.y + dy * distance;
+  }
+
+  function updateSteering(s, now) {
+    var off = isOffense(s), dx = keyX(), dy = keyY();
+    if (!off && selectedDefender) {
+      if (s.userDefenderId !== selectedDefender && now < selectHoldUntil) return;
+      selectedDefender = null;
+    }
+    var player = off ? controlledCarrier(s) : findDef(s, s.userDefenderId);
+    if (!player || (!movePointer && !dx && !dy)) {
+      stopMoving(s);
+      return;
+    }
+    if (dx || dy) {
+      keyboardTarget(player, dx, dy, tmp);
+    } else {
+      Render.screenToField(movePointer.x, movePointer.y, tmp);
+      steerTarget(player, tmp.x, tmp.y, tmp);
+      tmp.x = clampX(tmp.x); tmp.y = clampY(tmp.y);
+    }
+    sendMove(player.id, tmp.x, tmp.y, now);
+    steer.active = true;
+    steer.id = player.id;
+    steer.x = tmp.x;
+    steer.y = tmp.y;
+  }
+
+  /** Per-frame: update steering and aim independently. */
   function update(now) {
     var s = view();
-    steer.active = false;
-    if (!s) { aim.active = false; return; }
-    if (s.phase !== lastPhase) {
-      if (s.phase === 'presnap' || s.phase === 'playcall') touchedThisPlay = false;
-      lastPhase = s.phase;
-      lastX = NaN; lastY = NaN;
-      if (pid !== null && mode !== 'dead') mode = 'wait';
-      aim.active = false;
-      grab.key = null;
-    }
-    if (pid === null) { aim.active = false; return; }
-    if (s.phase !== 'live') { aim.active = false; return; }
-
-    if (mode === 'wait') resolveMode(s, false);
-    // a scrambling QB who crossed the line can no longer throw: he's a runner now
-    if (mode === 'drag' && !canThrow(s)) mode = controlledCarrier(s) ? 'follow' : 'wait';
-    if (mode === 'aim' && !canThrow(s)) { mode = 'dead'; aim.active = false; }
-    if (mode === 'follow' && isOffense(s) && !controlledCarrier(s)) mode = 'wait';
-
-    if (mode === 'drag' || mode === 'follow') {
-      Render.screenToField(cx, cy, tmp);
-      steerTarget(s, tmp.x, tmp.y, tmp);
-      sendMove(tmp.x, tmp.y, now, false);
-      aim.active = false;
-      if (performance.now() >= selectHoldUntil) {
-        steer.active = true;
-        steer.x = clampX(tmp.x);
-        steer.y = clampY(tmp.y);
+    if (!s || s.paused) { cancel(); return; }
+    syncPhase(s);
+    if (s.phase !== 'live') return;
+    updateSteering(s, now);
+    if (aimPointer) {
+      if (isOffense(s) && canThrow(s)) {
+        computeAim(s, aimPointer);
+      } else {
+        var p = aimPointer;
+        aimPointer = null;
+        aim.active = false;
+        releasePointer(p);
       }
-    } else if (mode === 'aim') {
-      computeAim(s);
-    } else {
-      aim.active = false;
     }
   }
 
@@ -407,12 +478,12 @@
   }
 
   function reset() {
-    pid = null;
-    mode = null;
-    aim.active = false;
+    clearPointers();
+    clearKeys();
     steer.active = false;
+    movingId = selectedDefender = null;
     selectHoldUntil = 0;
-    lastX = NaN; lastY = NaN;
+    lastSendT = -Infinity;
     lastPhase = null;
     touchedThisPlay = false;
     jukeAt = -1e9;
@@ -427,7 +498,7 @@
     aim: aim,
     steer: steer,
     grab: grab,
-    isTouching: function () { return pid !== null; },
+    isTouching: function () { return !!(movePointer || aimPointer || waitingPointer); },
     touchedThisPlay: function () { return touchedThisPlay; },
     qbHolds: qbHolds,
     canThrow: canThrow,

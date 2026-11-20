@@ -31,6 +31,7 @@ Use `npm ci`, `npm start`, and `npm test` from the repository root. The network 
 | --- | --- |
 | `test/sim.test.js` | Phase and input rules, scoring, standings, and seeded game behavior. |
 | `test/gameplay.test.js` | Play balance, run and pass outcomes, and pocket pressure. |
+| `test/input.test.js` | Pointer and keyboard input, simultaneous movement and aiming, and gesture cleanup. |
 | `test/fuzz.test.js` | Random and malformed sim inputs, finite snapshots, and bounded phases. |
 | `test/server.test.js` | HTTP serving and WebSocket room behavior. `test/fixtures/` provides isolated static assets and a fake sim. |
 | `test/online.test.js` | Full games over real WebSockets against the real sim. |

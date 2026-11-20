@@ -288,7 +288,14 @@ function start(port = 0, opts = {}) {
   }
 
   function refreshPause(room) {
-    if (room.game) room.game.paused = !bothActive(room);
+    if (!room.game) return;
+    const paused = !bothActive(room);
+    // Losing a connection can prevent the browser from releasing movement itself.
+    if (paused && !room.game.paused && room.game.phase === 'live') {
+      room.sim.input(room.game, 0, { t: 'stop' });
+      room.sim.input(room.game, 1, { t: 'stop' });
+    }
+    room.game.paused = paused;
   }
 
   /** Tell `ws` why its opponent is missing (if they are). */
@@ -439,6 +446,7 @@ function start(port = 0, opts = {}) {
     if (p.ws === ws) return; // already bound
     if (p.ws) {
       // A stale socket still holds the seat (phone switched networks): replace it.
+      if (room.game && room.game.phase === 'live') room.sim.input(room.game, team, { t: 'stop' });
       const old = p.ws;
       bindings.delete(old);
       p.ws = null;

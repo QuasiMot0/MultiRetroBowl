@@ -36,6 +36,11 @@ connections for Node, and that the Wi-Fi isn't a guest network with "client isol
 
 Tip: on iOS use Share → "Add to Home Screen" (Android: menu → "Add to Home screen") for full-screen play.
 
+## Controls
+
+- **Touch** — Drag the QB to move. While holding that touch, pull back and release with a second finger to pass. To pass with one finger, start away from the QB. Drag to steer a runner or defender.
+- **Keyboard and mouse** — Use **WASD** to move. Hold the left mouse button, drag back, and release to pass. Use **Space** to juke, switch defenders, or kick, depending on the play. **Shift** also switches defenders.
+
 ## Play over the internet
 
 The server is a single Node process that serves both the web page and the WebSocket

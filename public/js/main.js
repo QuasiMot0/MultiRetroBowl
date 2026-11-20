@@ -425,8 +425,8 @@
   // pause / quit
   function openPause() {
     if (S.mode === 'menu') return;
-    if (S.mode === 'cpu') S.cpuPaused = true;
     Input.cancel();
+    if (S.mode === 'cpu') S.cpuPaused = true;
     setText(el.pauseNote, S.mode === 'online' ? 'ONLINE GAME KEEPS RUNNING!' : '');
     refreshSoundButtons();
     showScreen('pauseMenu');
@@ -670,7 +670,9 @@
   }
   Input.init(canvas, {
     send: sendInput,
-    getView: function () { return S.mode === 'menu' || S.menuOpen ? null : S.view; },
+    getView: function () {
+      return S.mode === 'menu' || S.menuOpen || S.netDown || S.oppLeft || S.oppQuit ? null : S.view;
+    },
     myTeam: function () { return S.myTeam; },
     onTap: function () { Sound.unlock(); }
   });
@@ -748,9 +750,7 @@
   }
 
   // ================================================================== own-player prediction (online)
-  // The player you steer reacts to your finger immediately (moved toward the
-  // finger at his run speed) and is continuously pulled back onto the server
-  // timeline, so he never drifts far from where everyone else sees him.
+  // The player you steer reacts immediately and is continuously pulled back onto the server timeline.
   var pred = { id: null, side: null, poss: -1, x: 0, y: 0, vx: 0, vy: 0 };
   var PRED_MAX = 1.6;          // yd: max visual deviation from the interpolated server position
 
@@ -763,7 +763,7 @@
   function applyPrediction(v, dt) {
     if (!v || S.mode !== 'online') { pred.id = null; return; }
     var off = v.possession === S.myTeam;
-    var live = v.phase === 'live' && !v.paused && !S.netDown;
+    var live = v.phase === 'live' && !v.paused && !S.netDown && !S.oppLeft && !S.oppQuit;
     var id = live ? (off ? v.controlledOffId : v.userDefenderId) : null;
     var side = off ? 'off' : 'def';
     var vp;
@@ -784,7 +784,8 @@
       pred.x = vp.x; pred.y = vp.y; pred.vx = vp.vx || 0; pred.vy = vp.vy || 0;
     }
     var st = Input.steer;
-    if (st.active) {
+    var steering = st.active && st.id === id;
+    if (steering) {
       var spd = (SPEEDS[id] || 6) * (vp.juking ? 1.35 : 1);
       var dx = st.x - pred.x, dy = st.y - pred.y, d = Math.sqrt(dx * dx + dy * dy);
       var tvx = 0, tvy = 0;
@@ -796,12 +797,12 @@
     }
     pred.x += pred.vx * dt; pred.y += pred.vy * dt;
     // reconcile with the (interpolated) server position
-    var kc = 1 - Math.exp(-dt * (st.active ? 2.5 : 5));
+    var kc = 1 - Math.exp(-dt * (steering ? 2.5 : 5));
     pred.x += (vp.x - pred.x) * kc; pred.y += (vp.y - pred.y) * kc;
     var ex = pred.x - vp.x, ey = pred.y - vp.y, ed = Math.sqrt(ex * ex + ey * ey);
     if (ed > PRED_MAX) { pred.x = vp.x + ex / ed * PRED_MAX; pred.y = vp.y + ey / ed * PRED_MAX; }
     vp.x = pred.x; vp.y = pred.y;
-    if (st.active) { vp.vx = pred.vx; vp.vy = pred.vy; }   // face / animate the way he's going
+    if (steering) { vp.vx = pred.vx; vp.vy = pred.vy; }   // face / animate the way he's going
     var bl = v.ball;
     if (bl && bl.state === 'held' && bl.holder === id) { bl.x = pred.x; bl.y = pred.y; }
   }
@@ -949,10 +950,11 @@
     // ---- hint line
     var hint = '';
     if (ph === 'live' && s.phaseTime < 3 && !Input.touchedThisPlay()) {
+      var touch = window.matchMedia('(pointer: coarse)').matches;
       if (off) {
-        if (Input.canThrow(s)) hint = 'DRAG QB TO MOVE · PULL BACK & RELEASE TO THROW';
-        else if (Input.controlledCarrier(s)) hint = 'KEEP YOUR FINGER AHEAD OF THE RUNNER \u00b7 JUKE BEFORE CONTACT';
-      } else hint = 'DRAG TO MOVE \u00b7 TAP A DEFENDER TO SWITCH';
+        if (Input.canThrow(s)) hint = touch ? 'DRAG QB · PULL BACK & RELEASE WITH A SECOND TOUCH' : 'WASD TO MOVE · DRAG BACK & RELEASE TO THROW';
+        else if (Input.controlledCarrier(s)) hint = touch ? 'DRAG TO RUN · JUKE BEFORE CONTACT' : 'WASD TO RUN · SPACE TO JUKE';
+      } else hint = touch ? 'DRAG TO MOVE · TAP A DEFENDER TO SWITCH' : 'WASD TO MOVE · SHIFT TO SWITCH';
     } else if (ph === 'kick') {
       hint = off ? 'TAP KICK WHEN THE NEEDLE IS IN THE GREEN' : 'OPPONENT IS KICKING...';
     } else if (ph === 'presnap' && !off) {

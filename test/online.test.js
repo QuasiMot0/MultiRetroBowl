@@ -405,6 +405,30 @@ describe('online: real-time rate and hardening', () => {
     await a.close(); await b.close(); await srv.close();
   });
 
+  test('disconnect clears movement targets before the room resumes', async (t) => {
+    const srv = await scopedServer(t);
+    const { a, b, code, tokenA } = await pair(srv.port);
+    a.send({ type: 'input', msg: { t: 'pick', play: 'slant' } });
+    b.send({ type: 'input', msg: { t: 'pick', play: 'zone' } });
+    await a.wait((m) => m.type === 'state' && m.s.phase === 'live');
+    const g = srv.rooms.get(code).game;
+    const qb = pl(g, 'QB'), defender = pl(g, g.userDefenderId);
+    a.send({ type: 'input', msg: { t: 'move', x: 15, y: 25 } });
+    b.send({ type: 'input', msg: { t: 'move', x: 80, y: 25 } });
+    await a.wait((m) => m.type === 'state' && qb.hasTarget && defender.hasTarget);
+
+    await a.close();
+    await b.wait((m) => m.type === 'state' && m.s.paused);
+    assert.equal(qb.hasTarget, false);
+    assert.equal(defender.hasTarget, false);
+
+    const rejoined = await client(srv.port);
+    rejoined.send({ type: 'rejoin', code, token: tokenA });
+    await rejoined.wait((m) => m.type === 'state' && !m.s.paused);
+    assert.equal(qb.hasTarget, false);
+    assert.equal(defender.hasTarget, false);
+  });
+
   test('input flood is rate-limited per socket and the other player is unaffected', async (t) => {
     const counts = [0, 0];
     const sim = require('./fixtures/fake-sim.js');
