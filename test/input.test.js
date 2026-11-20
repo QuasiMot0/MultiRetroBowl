@@ -3,12 +3,14 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const GridSim = require('../shared/sim.js');
 
 const source = fs.readFileSync(path.join(__dirname, '../public/js/input.js'), 'utf8');
 
 function controls() {
   const canvas = new EventTarget();
   const window = new EventTarget();
+  window.GridSim = GridSim;
   const captured = new Set();
   const messages = [];
   let now = 100;
@@ -78,6 +80,25 @@ test('aim-first touch stays live when the steering touch is lifted', () => {
   assert.equal(c.input.aim.active, true);
   c.pointer('pointerup', 1, 37, 25);
   assert.deepEqual(c.messages.map((m) => m.t), ['move', 'stop', 'throw']);
+});
+
+test('two touches already held at the snap can steer and aim immediately', () => {
+  const c = controls();
+  c.view.phase = 'presnap';
+  c.pointer('pointerdown', 1, 30, 25);
+  c.pointer('pointerdown', 2, 42, 25);
+  c.tick();
+  assert.deepEqual(c.messages, []);
+  assert.deepEqual([...c.captured], [1, 2]);
+  c.view.phase = 'live';
+  c.tick();
+  c.pointer('pointermove', 1, 26, 25);
+  c.pointer('pointermove', 2, 37, 25);
+  c.tick();
+  assert.equal(c.input.steer.active, true);
+  assert.equal(c.input.aim.valid, true);
+  c.pointer('pointerup', 2, 37, 25);
+  assert.deepEqual(c.messages.map((m) => m.t), ['move', 'move', 'throw']);
 });
 
 test('WASD steers at equal diagonal distance while the mouse aims and releases', () => {

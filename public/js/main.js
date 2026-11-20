@@ -571,6 +571,7 @@
   Net.on('opponent_left', function (m) {
     S.oppLeft = true;
     S.oppAway = !!(m && m.reason === 'away');
+    Input.cancel();
     S.oppRematch = false;
     S.rematchSent = false;               // server clears both votes when someone drops
     if (S.overShown) updateOverStatus();
@@ -605,7 +606,10 @@
     }
   });
   Net.on('close', function () {
-    if (S.mode === 'online' || S.awaitOnline) S.netDown = true;
+    if (S.mode === 'online' || S.awaitOnline) {
+      S.netDown = true;
+      Input.cancel();
+    }
     if (S.overShown) updateOverStatus();
     if (S.awaitOnline && S.mode !== 'online') {
       var st = !$('screenCreate').classList.contains('hidden') ? $('createStatus')

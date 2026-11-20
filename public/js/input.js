@@ -9,7 +9,8 @@
   var canvas = null;
   var opts = null;                 // { send(msg), getView(), myTeam(), onTap() }
 
-  var movePointer = null, aimPointer = null, waitingPointer = null;
+  var movePointer = null, aimPointer = null;
+  var waitingPointers = [];
   var moveKeys = { KeyW: false, KeyA: false, KeyS: false, KeyD: false };
   var lastSendT = -Infinity, lastX = NaN, lastY = NaN;
   var movingId = null;
@@ -199,8 +200,9 @@
     var p = { id: e.pointerId, type: e.pointerType, x: e.clientX, y: e.clientY };
     if (s.phase === 'live') {
       if (!assignPointer(p, s)) return;
-    } else if ((s.phase === 'presnap' || s.phase === 'playcall') && !waitingPointer) {
-      waitingPointer = p;
+    } else if (s.phase === 'presnap' || s.phase === 'playcall') {
+      if (waitingPointers.length >= (isOffense(s) ? 2 : 1)) return;
+      waitingPointers.push(p);
     } else return;
     touchedThisPlay = true;
     if (!isOffense(s)) trySelect(s, p);
@@ -210,7 +212,9 @@
   function pointerFor(id) {
     if (movePointer && movePointer.id === id) return movePointer;
     if (aimPointer && aimPointer.id === id) return aimPointer;
-    if (waitingPointer && waitingPointer.id === id) return waitingPointer;
+    for (var i = 0; i < waitingPointers.length; i++) {
+      if (waitingPointers[i].id === id) return waitingPointers[i];
+    }
     return null;
   }
 
@@ -241,7 +245,7 @@
       grab.key = null;
       if (!keyX() && !keyY()) stopMoving(s);
     } else {
-      waitingPointer = null;
+      waitingPointers.splice(waitingPointers.indexOf(p), 1);
     }
     releasePointer(p);
   }
@@ -252,11 +256,12 @@
   }
 
   function clearPointers() {
-    var move = movePointer, a = aimPointer, wait = waitingPointer;
-    movePointer = aimPointer = waitingPointer = null;
+    var move = movePointer, a = aimPointer;
+    movePointer = aimPointer = null;
     aim.active = false;
     grab.key = null;
-    releasePointer(move); releasePointer(a); releasePointer(wait);
+    releasePointer(move); releasePointer(a);
+    if (waitingPointers.length) waitingPointers.splice(0).forEach(releasePointer);
   }
 
   function clearKeys() {
@@ -388,9 +393,12 @@
       clearKeys();
     }
     if (s.phase === 'presnap' || s.phase === 'playcall') touchedThisPlay = false;
-    if (s.phase === 'live' && waitingPointer) {
-      assignPointer(waitingPointer, s);
-      waitingPointer = null;
+    if (s.phase === 'live') {
+      var waiting = waitingPointers.splice(0);
+      for (var i = 0; i < waiting.length; i++) {
+        if (!assignPointer(waiting[i], s)) releasePointer(waiting[i]);
+      }
+      if (waiting.length) touchedThisPlay = true;
     } else if (s.phase !== 'presnap' && s.phase !== 'playcall') {
       clearPointers();
     }
@@ -500,7 +508,7 @@
     aim: aim,
     steer: steer,
     grab: grab,
-    isTouching: function () { return !!(movePointer || aimPointer || waitingPointer); },
+    isTouching: function () { return !!(movePointer || aimPointer || waitingPointers.length); },
     touchedThisPlay: function () { return touchedThisPlay; },
     qbHolds: qbHolds,
     canThrow: canThrow,
