@@ -75,6 +75,14 @@ In 48 paired replays, a third straight Blitz gave up **15 Off Tackle runs of 10+
 
 The original design lists four offensive scrimmage calls and three defensive calls. The current picker has twelve and nine respectively, plus two fourth-down kicks. Use the playbooks above when comparing today's calls. [Original plan](PLAN.md) · [Play definitions and CPU weights](shared/sim.js)
 
+### Likely effects during play
+
+These are playtest hypotheses based on the call weights, matchup results, and picker layout.
+
+- **Playing defense against the CPU.** A player who keeps calling Blitz gives the CPU a reason to favor Off Tackle after two calls. A player who keeps calling Man gives up the same blocking bonus on the third snap, but the CPU has no extra reason to choose Off Tackle. That can make Man feel easier to reuse and give the player less incentive to learn a second defense. In head-to-head games, the opposing player can spot the streak and choose the counter themselves.
+- **Trying to get the last yard.** Stuffing a Dive with an inside rush gives the defender a payoff for anticipating the call. The concern is how often the CPU volunteers that matchup. On third-and-one, repeated stuffs could make CPU drives feel predictable. A two-yard average also tells a player little about the chance of gaining one yard on this snap. Track conversions by distance and defensive call before changing block strength.
+- **Finding pressure before the snap.** A player looking for man coverage can find Cover 0 under Man. A player looking for an extra rusher may open Blitz and overlook the same play. The diagram explains the pressure once they find the card. A quick usability check is to ask a first-time player to call pressure with man coverage and observe which tab they open and whether they find Cover 0.
+
 ## Where to tune
 
 | Area | Code to start with | What to compare |
