@@ -65,6 +65,16 @@ Baseline recorded November 20, 2026. Values are mean yards per carry across seed
 
 In 48 paired replays, a third straight Blitz gave up **15 Off Tackle runs of 10+ yards**. A Blitz after the defense mixed in Man gave up **zero**. Both sequences still produced 28 stops under four yards. Compare short stops and breakaways alongside yards per carry. [Run matchup and streak tests](test/gameplay.test.js)
 
+## Decision review
+
+| Decision | Inconsistency or tradeoff | What to check before tuning |
+| --- | --- | --- |
+| Reward the offense for spotting a repeated defense. | The blocking bonus applies to every repeated call, but the CPU increases a counter run's selection weight for only five of nine calls. Man is absent even though Off Tackle averages 5.1 yards against fresh Man. | Compare CPU run selection and gains after two Man calls against a mixed sequence. The fresh-defense average alone cannot tell us how valuable a streak is. |
+| Give Dive a role in short yardage. | Dive has the highest base call weight with two yards or less to go. Against fresh defenses its best mean is 2.3 yards, and it averages −1.0 against both Cover 0 and Fire Zone. | Measure conversion rates separately on one and two yards to go before adjusting Dive or its CPU weight. |
+| Make defensive calls easy to find. | Man and Zone describe coverage. Blitz describes pressure. Cover 0 and Fire Zone each send a third rusher, but Cover 0 appears under Man and Fire Zone under Blitz. | Use the card diagram to check rushers and coverage together. The category alone cannot answer both questions. |
+
+The original design lists four offensive scrimmage calls and three defensive calls. The current picker has twelve and nine respectively, plus two fourth-down kicks. Use the playbooks above when comparing today's calls. [Original plan](PLAN.md) · [Play definitions and CPU weights](shared/sim.js)
+
 ## Where to tune
 
 | Area | Code to start with | What to compare |

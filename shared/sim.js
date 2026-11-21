@@ -54,31 +54,31 @@
   };
 
   var OFFENSE_PLAYS = [
-    { id: 'slant', name: 'Slant', desc: 'WRs cut inside after 5 yards. Quick, safe throws.' },
-    { id: 'stick', name: 'Stick', desc: 'TE settles underneath while the RB swings to the flat.' },
-    { id: 'mesh', name: 'Mesh', desc: 'Two receivers cross underneath a deeper in-route.' },
-    { id: 'deep', name: 'Deep Shot', desc: 'WRs go long. RB stays in to block. Big play potential.' },
-    { id: 'post', name: 'Post Corner', desc: 'One WR breaks to the post and the other to the corner.' },
-    { id: 'flood', name: 'Flood', desc: 'A clearout, deep out and flat stretch the right sideline.' },
-    { id: 'screen', name: 'Screen', desc: 'RB and TE swing to the flats behind the line; WRs block.' },
-    { id: 'tunnel', name: 'Tunnel Screen', desc: 'The left WR comes back inside behind his blockers.' },
-    { id: 'swing', name: 'Swing Screen', desc: 'Get the ball to the RB outside on the right.' },
-    { id: 'run', name: 'Off Tackle', desc: 'Attack the left lane against Fire Zone.' },
-    { id: 'dive', name: 'Dive', desc: 'Run between the linemen when the defense spreads out.' },
-    { id: 'sweep', name: 'Sweep', desc: 'Follow the WR block to the right edge against Quarters.' },
-    { id: 'punt', name: 'Punt', desc: '4th down only. Net 40 yards.', fourthOnly: true },
-    { id: 'fg', name: 'Field Goal', desc: '4th down only. Time the kick meter.', fourthOnly: true }
+    { id: 'slant', name: 'Slant', category: 'Quick pass', desc: 'WRs cut inside after 5 yards. Quick, safe throws.' },
+    { id: 'stick', name: 'Stick', category: 'Quick pass', desc: 'TE settles underneath while the RB swings to the flat.' },
+    { id: 'mesh', name: 'Mesh', category: 'Quick pass', desc: 'Two receivers cross underneath a deeper in-route.' },
+    { id: 'deep', name: 'Deep Shot', category: 'Deep pass', desc: 'WRs go long. RB stays in to block. Big play potential.' },
+    { id: 'post', name: 'Post Corner', category: 'Deep pass', desc: 'One WR breaks to the post and the other to the corner.' },
+    { id: 'flood', name: 'Flood', category: 'Deep pass', desc: 'A clearout, deep out and flat stretch the right sideline.' },
+    { id: 'screen', name: 'Screen', category: 'Screens', desc: 'RB and TE swing to the flats behind the line; WRs block.' },
+    { id: 'tunnel', name: 'Tunnel Screen', category: 'Screens', desc: 'The left WR comes back inside behind his blockers.' },
+    { id: 'swing', name: 'Swing Screen', category: 'Screens', desc: 'Get the ball to the RB outside on the right.' },
+    { id: 'run', name: 'Off Tackle', category: 'Runs', desc: 'Attack the left lane against Fire Zone.' },
+    { id: 'dive', name: 'Dive', category: 'Runs', desc: 'Run between the linemen when the defense spreads out.' },
+    { id: 'sweep', name: 'Sweep', category: 'Runs', desc: 'Follow the WR block to the right edge against Quarters.' },
+    { id: 'punt', name: 'Punt', category: 'Kicks', desc: '4th down only. Net 40 yards.', fourthOnly: true },
+    { id: 'fg', name: 'Field Goal', category: 'Kicks', desc: '4th down only. Time the kick meter.', fourthOnly: true }
   ];
   var DEFENSE_PLAYS = [
-    { id: 'man', name: 'Man', desc: 'CBs shadow the WRs, LB takes the TE, safeties over the top.' },
-    { id: 'robber', name: 'Man Robber', desc: 'Four man assignments with a safety reading short throws over the middle.' },
-    { id: 'zero', name: 'Cover 0', desc: 'Three rushers and four man assignments across the board.' },
-    { id: 'zone', name: 'Zone', desc: 'Defenders drop into areas and break on the ball.' },
-    { id: 'cover3', name: 'Cover 3', desc: 'Three deep zones with two underneath defenders.' },
-    { id: 'quarters', name: 'Quarters', desc: 'Four deep zones and a linebacker underneath.' },
-    { id: 'blitz', name: 'Blitz', desc: 'LB and a safety rush the QB. Risky man coverage behind.' },
-    { id: 'edge', name: 'Edge Blitz', desc: 'A safety rushes from the right while the LB protects the middle.' },
-    { id: 'fire', name: 'Fire Zone', desc: 'Send the linebacker up the middle with zone coverage behind him.' }
+    { id: 'man', name: 'Man', category: 'Man', desc: 'CBs shadow the WRs, LB takes the TE, safeties over the top.' },
+    { id: 'robber', name: 'Man Robber', category: 'Man', desc: 'Four man assignments with a safety reading short throws over the middle.' },
+    { id: 'zero', name: 'Cover 0', category: 'Man', desc: 'Three rushers and four man assignments across the board.' },
+    { id: 'zone', name: 'Zone', category: 'Zone', desc: 'Defenders drop into areas and break on the ball.' },
+    { id: 'cover3', name: 'Cover 3', category: 'Zone', desc: 'Three deep zones with two underneath defenders.' },
+    { id: 'quarters', name: 'Quarters', category: 'Zone', desc: 'Four deep zones and a linebacker underneath.' },
+    { id: 'blitz', name: 'Blitz', category: 'Blitz', desc: 'LB and a safety rush the QB. Risky man coverage behind.' },
+    { id: 'edge', name: 'Edge Blitz', category: 'Blitz', desc: 'A safety rushes from the right while the LB protects the middle.' },
+    { id: 'fire', name: 'Fire Zone', category: 'Blitz', desc: 'Send the linebacker up the middle with zone coverage behind him.' }
   ];
   var OFF_PLAY_IDS = OFFENSE_PLAYS.map(function (play) { return play.id; });
   var DEF_PLAY_IDS = DEFENSE_PLAYS.map(function (play) { return play.id; });

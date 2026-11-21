@@ -40,6 +40,8 @@ Tip: on iOS use Share → "Add to Home Screen" (Android: menu → "Add to Home s
 
 ## Controls
 
+Choose a play category to see its diagrams. Tap a card to call the play, or hold it for a labeled preview. On a keyboard, focus the card and press **P** to preview it.
+
 - **Touch** — Start the thumbstick anywhere in the left quarter of the screen on offense or defense. Push it farther to move faster. Drag back and release to its right with a second finger to pass, or tap a defender to switch on defense.
 - **Keyboard and mouse** — Use **WASD** to move. Hold the left mouse button, drag back, and release to pass. Use **Space** to juke, switch defenders, or kick, depending on the play. **Shift** also switches defenders.
 
@@ -84,3 +86,4 @@ Online rooms pause when a player disconnects and are kept for 5 minutes so they 
 and [PLAN.md](PLAN.md) for the original design and protocol outline.
 
 See the [balance reference](BALANCE.md) for the current playbooks, run matchups, and how to retest them after changing the sim.
+The [decision review](BALANCE.md#decision-review) records differences between design intent, CPU play selection, and measured outcomes.

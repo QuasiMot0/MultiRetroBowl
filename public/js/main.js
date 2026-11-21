@@ -9,17 +9,17 @@
 
   // ================================================================== play lists
   var FALLBACK_OFF = [
-    { id: 'slant', name: 'Slant', desc: 'WRs cut inside after 5 yds. Quick, safe throw.' },
-    { id: 'deep', name: 'Deep', desc: 'WRs streak 25 yds then fade. Big-play shot.' },
-    { id: 'screen', name: 'Screen', desc: 'RB & TE swing to the flat behind the line.' },
-    { id: 'run', name: 'Run', desc: 'Handoff to the RB. WRs block downfield.' },
-    { id: 'punt', name: 'Punt', desc: 'Boot it away. Nets about 40 yards.' },
-    { id: 'fg', name: 'Field Goal', desc: 'Stop the kick meter in the green.' }
+    { id: 'slant', name: 'Slant', category: 'Quick pass', desc: 'WRs cut inside after 5 yds. Quick, safe throw.' },
+    { id: 'deep', name: 'Deep', category: 'Deep pass', desc: 'WRs streak 25 yds then fade. Big-play shot.' },
+    { id: 'screen', name: 'Screen', category: 'Screens', desc: 'RB & TE swing to the flat behind the line.' },
+    { id: 'run', name: 'Run', category: 'Runs', desc: 'Handoff to the RB. WRs block downfield.' },
+    { id: 'punt', name: 'Punt', category: 'Kicks', desc: 'Boot it away. Nets about 40 yards.', fourthOnly: true },
+    { id: 'fg', name: 'Field Goal', category: 'Kicks', desc: 'Stop the kick meter in the green.', fourthOnly: true }
   ];
   var FALLBACK_DEF = [
-    { id: 'man', name: 'Man', desc: 'CBs lock onto WRs, LB takes the TE.' },
-    { id: 'zone', name: 'Zone', desc: 'Drop into areas and jump the throw.' },
-    { id: 'blitz', name: 'Blitz', desc: 'LB + safety rush the QB. Risky!' }
+    { id: 'man', name: 'Man', category: 'Man', desc: 'CBs lock onto WRs, LB takes the TE.' },
+    { id: 'zone', name: 'Zone', category: 'Zone', desc: 'Drop into areas and jump the throw.' },
+    { id: 'blitz', name: 'Blitz', category: 'Blitz', desc: 'LB + safety rush the QB. Risky!' }
   ];
   function mergePlays(list, fb) {
     if (!list || !list.length) return fb;
@@ -29,7 +29,10 @@
       var f = null;
       for (var j = 0; j < fb.length; j++) if (fb[j].id === p.id) f = fb[j];
       if (!p.id) continue;
-      out.push({ id: p.id, name: p.name || (f && f.name) || p.id, desc: p.desc || (f && f.desc) || '' });
+      out.push({
+        id: p.id, name: p.name || (f && f.name) || p.id, desc: p.desc || (f && f.desc) || '',
+        category: p.category || (f && f.category) || 'Other', fourthOnly: !!(p.fourthOnly || (f && f.fourthOnly))
+      });
     }
     return out.length ? out : fb;
   }
@@ -202,8 +205,9 @@
     banner: $('banner'), bannerBig: $('bannerBig'), bannerSub: $('bannerSub'),
     presnap: $('presnapTag'), hint: $('hint'),
     pc: $('playcall'), pcTitle: $('pcTitle'), pcTimer: $('pcTimer'), pcSub: $('pcSub'),
-    pcCards: $('pcCards'), pcWaiting: $('pcWaiting'), pcPicked: $('pcPicked'), pcHelp: $('pcHelp'),
+    pcCategories: $('pcCategories'), pcCards: $('pcCards'), pcWaiting: $('pcWaiting'), pcPicked: $('pcPicked'), pcHelp: $('pcHelp'),
     pcPreview: $('pcPreview'), pcPreviewName: $('pcPreviewName'), pcDiagram: $('pcDiagram'), pcLegend: $('pcLegend'),
+    pcDescription: $('pcDescription'),
     paused: $('pausedOverlay'), pausedMsg: $('pausedMsg'), pausedQuit: $('btnPausedQuit'),
     pauseNote: $('pauseNote'),
     toast: $('toast')
@@ -305,6 +309,7 @@
     S.lastArr = 0;
     pred.id = null;
     pcKey = '';
+    pcCategory.off = pcCategory.def = '';
     el.banner.classList.add('hidden');
     showScreen(null);
     document.body.classList.add('ingame');
@@ -850,20 +855,36 @@
   }
 
   var pcKey = '';
+  var pcCategory = { off: '', def: '' };
   var pcPress = null, pcPreviewCard = null, pcIgnoredClick = null;
+
+  function canPickPlay(s) {
+    return s && s.phase === 'playcall' && !S.menuOpen && !s.paused && !S.localPick && !(s.picked && s.picked[S.myTeam]);
+  }
+
+  function drawCardDiagram(canvas, s, play, offense, compact) {
+    if (play.fourthOnly) {
+      Render.drawKickDiagram(canvas, play.id);
+      return [];
+    }
+    var paths = Sim ? Sim.playPreview(s, play.id) : [];
+    Render.drawPlayDiagram(canvas, 10 + s.ballOn, paths, offense, compact);
+    return paths;
+  }
 
   function showPlayPreview(card, play, offense) {
     var s = S.view;
-    if (!Sim || !s || s.phase !== 'playcall' || S.menuOpen || s.paused || S.localPick || (s.picked && s.picked[S.myTeam])) return;
-    var paths = Sim.playPreview(s, play.id);
-    if (!paths.length) return;
+    if (!canPickPlay(s)) return;
+    var paths = drawCardDiagram(el.pcDiagram, s, play, offense, false);
     pcPreviewCard = card;
     setText(el.pcPreviewName, play.name);
+    setText(el.pcDescription, play.desc);
+    setShown(el.pcLegend, !play.fourthOnly);
     setText(el.pcLegend, offense ? 'Solid routes and runs · Dashed blocks' : 'Blue zones · Purple man coverage · Orange rush');
-    el.pcDiagram.setAttribute('aria-label', play.name + '. ' + paths.map(function (path) {
+    var assignments = paths.map(function (path) {
       return path.id + ' ' + (path.target ? 'covers ' + path.target : path.kind);
-    }).join(', '));
-    Render.drawPlayDiagram(el.pcDiagram, 10 + s.ballOn, paths, offense);
+    }).join(', ');
+    el.pcDiagram.setAttribute('aria-label', play.name + '. ' + (assignments || play.desc));
     setShown(el.pcPreview, true);
   }
 
@@ -878,12 +899,11 @@
     pcPress = null;
   }
 
-  function bindPlayPreview(card, play, offense, special) {
+  function bindPlayPreview(card, play, offense) {
     card.addEventListener('pointerdown', function (e) {
-      if (e.button !== 0 || pcPress) return;
+      if (e.button !== 0 || pcPress || !canPickPlay(S.view)) return;
       pcIgnoredClick = null;
       hidePlayPreview();
-      if (special) return;
       pcPress = { id: e.pointerId, x: e.clientX, y: e.clientY };
       pcPress.timer = setTimeout(function () {
         pcIgnoredClick = card;
@@ -907,41 +927,78 @@
     card.addEventListener('pointerup', finish);
     card.addEventListener('pointercancel', finish);
     card.addEventListener('lostpointercapture', finish);
-    if (!special) {
-      card.addEventListener('keydown', function (e) {
-        if (e.repeat || (e.key === 'Escape' ? pcPreviewCard !== card : e.key.toLowerCase() !== 'p')) return;
-        e.preventDefault();
-        if (pcPreviewCard === card) hidePlayPreview();
-        else if (e.key !== 'Escape') showPlayPreview(card, play, offense);
-      });
-      card.addEventListener('blur', function () { if (pcPreviewCard === card && !pcPress) hidePlayPreview(); });
-    }
+    card.addEventListener('keydown', function (e) {
+      if (e.repeat || (e.key === 'Escape' ? pcPreviewCard !== card : e.key.toLowerCase() !== 'p')) return;
+      e.preventDefault();
+      if (pcPreviewCard === card) hidePlayPreview();
+      else if (e.key !== 'Escape') showPlayPreview(card, play, offense);
+    });
+    card.addEventListener('blur', function () { if (pcPreviewCard === card && !pcPress) hidePlayPreview(); });
   }
 
-  function buildCards(offense, fourth) {
+  function buildCards(s, offense, plays) {
     clearPlayPress();
     hidePlayPreview();
     pcIgnoredClick = null;
-    var list = offense ? OFF_PLAYS : DEF_PLAYS;
     var frag = document.createDocumentFragment();
-    for (var i = 0; i < list.length; i++) {
-      var p = list[i];
-      var special = p.id === 'punt' || p.id === 'fg';
-      if (special && !fourth) continue;
+    plays.forEach(function (play) {
       var card = document.createElement('button');
-      card.className = 'card' + (special ? ' special' : '') + (offense ? '' : ' def');
-      card.setAttribute('data-id', p.id);
-      var nm = document.createElement('div'); nm.className = 'nm'; nm.textContent = p.name;
-      var ds = document.createElement('div'); ds.className = 'ds'; ds.textContent = p.desc;
-      card.appendChild(nm); card.appendChild(ds);
-      bindPlayPreview(card, p, offense, special);
+      card.type = 'button';
+      card.className = 'card' + (play.fourthOnly ? ' special' : '') + (offense ? '' : ' def');
+      card.setAttribute('data-id', play.id);
+      card.setAttribute('aria-description', play.desc);
+      var diagram = document.createElement('canvas');
+      diagram.className = 'card-diagram';
+      diagram.width = 280; diagram.height = 136;
+      diagram.setAttribute('aria-hidden', 'true');
+      drawCardDiagram(diagram, s, play, offense, true);
+      var name = document.createElement('span');
+      name.className = 'nm'; name.textContent = play.name;
+      card.appendChild(diagram); card.appendChild(name);
+      bindPlayPreview(card, play, offense);
       card.addEventListener('click', onPick);
       frag.appendChild(card);
-    }
+    });
+    setClass(el.pcCards, 'two-cards', plays.length === 2);
     el.pcCards.innerHTML = '';
     el.pcCards.appendChild(frag);
     el.pcCards.scrollTop = 0;
   }
+
+  function buildPlaybook(s, offense) {
+    var groups = new Map();
+    (offense ? OFF_PLAYS : DEF_PLAYS).forEach(function (play) {
+      if (play.fourthOnly && !s.fourthDown) return;
+      if (!groups.has(play.category)) groups.set(play.category, []);
+      groups.get(play.category).push(play);
+    });
+    var role = offense ? 'off' : 'def';
+    var active = groups.has(pcCategory[role]) ? pcCategory[role] : groups.keys().next().value;
+    var selected;
+    var frag = document.createDocumentFragment();
+    groups.forEach(function (plays, category) {
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'pc-category';
+      button.textContent = category;
+      button.setAttribute('aria-pressed', String(category === active));
+      button.setAttribute('aria-controls', 'pcCards');
+      if (category === active) selected = button;
+      button.addEventListener('click', function () {
+        if (!canPickPlay(S.latest) || button === selected) return;
+        selected.setAttribute('aria-pressed', 'false');
+        selected = button;
+        button.setAttribute('aria-pressed', 'true');
+        pcCategory[role] = category;
+        buildCards(S.view || S.latest, offense, plays);
+      });
+      frag.appendChild(button);
+    });
+    el.pcCategories.innerHTML = '';
+    el.pcCategories.appendChild(frag);
+    buildCards(s, offense, groups.get(active));
+  }
+
   function onPick(e) {
     e.preventDefault();
     if (e.detail && e.currentTarget === pcIgnoredClick) return;
@@ -949,7 +1006,7 @@
     Sound.unlock();
     var id = e.currentTarget.getAttribute('data-id');
     var s = S.latest;
-    if (!s || s.phase !== 'playcall' || S.menuOpen || s.paused || S.localPick || (s.picked && s.picked[S.myTeam])) return;
+    if (!canPickPlay(s)) return;
     S.localPick = id;
     Sound.click();
     sendInput({ t: 'pick', play: id });
@@ -1000,13 +1057,14 @@
     setShown(el.pc, inPc && !S.overShown);
     if (inPc) {
       var key = (off ? 'o' : 'd') + (s.fourthDown ? '4' : '');
-      if (key !== pcKey) { pcKey = key; buildCards(off, !!s.fourthDown); }
+      if (key !== pcKey) { pcKey = key; buildPlaybook(s, off); }
       var picked = !!(S.localPick || (s.picked && s.picked[S.myTeam]));
       if (picked || S.menuOpen || s.paused || S.netDown || S.oppLeft || S.oppQuit) {
         clearPlayPress();
         hidePlayPreview();
       }
       setClass(el.pcCards, 'locked', picked);
+      setClass(el.pcCategories, 'locked', picked);
       setShown(el.pcHelp, !picked);
       setShown(el.pcWaiting, picked);
       if (picked) setText(el.pcPicked, S.localPick ? 'YOU PICKED ' + playName(S.localPick).toUpperCase() : 'PLAY LOCKED IN');
