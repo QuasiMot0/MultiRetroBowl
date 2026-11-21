@@ -23,7 +23,7 @@
   // where the finger is currently steering our player (field yards), for client-side prediction
   var steer = { active: false, id: null, x: 0, y: 0, speed: 1 };
   var selectedDefender = null, selectHoldUntil = 0;
-  var stick = { el: null, thumb: null, id: null, x: 0, y: 0, speed: 0, available: false };
+  var stick = { zone: null, el: null, thumb: null, id: null, x: 0, y: 0, speed: 0, originX: 0, originY: 0, radius: 0, available: false };
 
   var btn = { juke: null, sw: null, kick: null };
   var vis = { juke: null, sw: null, kick: null, cool: null };
@@ -91,16 +91,18 @@
 
   function trySelect(s, p) {
     Render.screenToField(p.x, p.y, tmp);
-    var best = null, bd = 1.5 * 1.5;
+    var radius = p.type === 'mouse' ? 1.5 : 2.2;
+    var current = selectedDefender || s.userDefenderId;
+    var best = null, bd = radius * radius;
     var ps = s.players || [];
     for (var i = 0; i < ps.length; i++) {
       var dfn = ps[i];
-      if (dfn.side !== 'def' || dfn.id === s.userDefenderId) continue;
+      if (dfn.side !== 'def') continue;
       var dx = dfn.x - tmp.x, dy = (dfn.y - 0.8) - tmp.y;  // sprite center is ~0.8yd above the feet
       var d = dx * dx + dy * dy;
       if (d < bd) { bd = d; best = dfn; }
     }
-    if (best) selectDefender(best.id);
+    if (best && best.id !== current) selectDefender(best.id);
   }
 
   function sendMove(id, x, y, now, speed) {
@@ -207,6 +209,13 @@
       return;
     }
     var p = { id: e.pointerId, type: e.pointerType, x: e.clientX, y: e.clientY };
+    if (!isOffense(s) && stick.available && p.type !== 'mouse') {
+      if (s.phase === 'live' || s.phase === 'presnap') {
+        touchedThisPlay = true;
+        trySelect(s, p);
+      }
+      return;
+    }
     if (s.phase === 'live') {
       if (!assignPointer(p, s)) return;
     } else if (s.phase === 'presnap' || s.phase === 'playcall') {
@@ -280,13 +289,13 @@
     stick.id = null;
     stick.x = stick.y = stick.speed = 0;
     stick.thumb.style.transform = '';
-    try { stick.el.releasePointerCapture(id); } catch (err) { /* ignore */ }
+    stick.el.style.left = stick.el.style.top = stick.el.style.bottom = '';
+    try { stick.zone.releasePointerCapture(id); } catch (err) { /* ignore */ }
   }
 
   function readStick(e) {
-    var rect = stick.el.getBoundingClientRect();
-    var dx = e.clientX - rect.left - rect.width / 2, dy = e.clientY - rect.top - rect.height / 2;
-    var radius = rect.width * 0.34;
+    var dx = e.clientX - stick.originX, dy = e.clientY - stick.originY;
+    var radius = stick.radius;
     var distance = Math.hypot(dx, dy);
     var scale = distance > 0 ? Math.min(1, radius / distance) : 0;
     stick.x = dx * scale; stick.y = dy * scale;
@@ -297,21 +306,37 @@
   function bindStick() {
     stick.el = document.getElementById('moveStick');
     if (!stick.el) return;
+    stick.zone = document.getElementById('moveZone') || stick.el;
     stick.thumb = stick.el.firstElementChild;
     stick.available = !!(window.matchMedia && window.matchMedia('(any-pointer: coarse)').matches);
-    stick.el.addEventListener('pointerdown', function (e) {
+    stick.zone.addEventListener('pointerdown', function (e) {
       var s = view();
-      if (!s || s.paused || !isOffense(s) || stick.id !== null || e.button !== 0 ||
+      if (!s || s.paused || stick.id !== null || e.button !== 0 ||
           (s.phase !== 'presnap' && s.phase !== 'live')) return;
       e.preventDefault();
       syncPhase(s);
       if (opts.onTap) opts.onTap();
       stick.id = e.pointerId;
       touchedThisPlay = true;
+      var rect = stick.el.getBoundingClientRect();
+      stick.radius = Math.max(1, rect.width * 0.34);
+      if (e.target === stick.el || stick.el.contains(e.target)) {
+        stick.originX = rect.left + rect.width / 2;
+        stick.originY = rect.top + rect.height / 2;
+      } else {
+        var zone = stick.zone.getBoundingClientRect();
+        stick.originX = e.clientX;
+        stick.originY = e.clientY;
+        var left = Math.max(0, Math.min(zone.width - rect.width, e.clientX - zone.left - rect.width / 2));
+        var top = Math.max(0, Math.min(zone.height - rect.height, e.clientY - zone.top - rect.height / 2));
+        stick.el.style.left = left + 'px';
+        stick.el.style.top = top + 'px';
+        stick.el.style.bottom = 'auto';
+      }
       readStick(e);
-      try { stick.el.setPointerCapture(stick.id); } catch (err) { /* ignore */ }
+      try { stick.zone.setPointerCapture(stick.id); } catch (err) { /* ignore */ }
     });
-    stick.el.addEventListener('pointermove', function (e) {
+    stick.zone.addEventListener('pointermove', function (e) {
       if (e.pointerId === stick.id) readStick(e);
     });
     function finishStick(e) {
@@ -319,9 +344,9 @@
       clearStick();
       if (!movePointer && !keyX() && !keyY()) stopMoving(view());
     }
-    stick.el.addEventListener('pointerup', finishStick);
-    stick.el.addEventListener('pointercancel', finishStick);
-    stick.el.addEventListener('lostpointercapture', finishStick);
+    stick.zone.addEventListener('pointerup', finishStick);
+    stick.zone.addEventListener('pointercancel', finishStick);
+    stick.zone.addEventListener('lostpointercapture', finishStick);
   }
 
   function clearKeys() {
@@ -353,6 +378,7 @@
     selectedDefender = id;
     selectHoldUntil = performance.now() + 450;
     movingId = null;  // the sim clears the old defender's target on select
+    lastSendT = -Infinity;
     steer.active = false;
   }
 
@@ -361,12 +387,16 @@
     if (!s || s.paused || isOffense(s) || (s.phase !== 'live' && s.phase !== 'presnap' && s.phase !== 'playcall')) return;
     var b = s.ball;
     if (!b) return;
+    var carrier = b.state === 'held' ? findP(s, b.holder) : null;
+    var x = b.state === 'air' ? b.tx : b.x + (carrier ? (carrier.vx || 0) * 0.45 : 0);
+    var y = b.state === 'air' ? b.ty : b.y + (carrier ? (carrier.vy || 0) * 0.45 : 0);
+    var current = selectedDefender || s.userDefenderId;
     var ps = s.players || [];
     var best = null, bd = Infinity;
     for (var i = 0; i < ps.length; i++) {
       var p = ps[i];
-      if (p.side !== 'def' || p.id === s.userDefenderId) continue;
-      var dx = p.x - b.x, dy = p.y - b.y, d = dx * dx + dy * dy;
+      if (p.side !== 'def' || p.id === current) continue;
+      var d = Math.hypot(p.x - x, p.y - y) / (window.GridSim.playerSpeed(p.id) || 6);
       if (d < bd) { bd = d; best = p; }
     }
     if (best) selectDefender(best.id);
@@ -488,7 +518,7 @@
       selectedDefender = null;
     }
     var player = off ? controlledCarrier(s) : findDef(s, s.userDefenderId);
-    var usingStick = off && stick.id !== null;
+    var usingStick = stick.id !== null;
     var speed;
     if (!player || (!movePointer && !usingStick && !dx && !dy)) {
       stopMoving(s);
@@ -550,7 +580,7 @@
     }
     var showSwitch = !!(inGame && s && !off && (ph === 'live' || ph === 'presnap'));
     var showKick = !!(inGame && s && off && ph === 'kick');
-    setVis('stick', stick.el, !!(stick.available && inGame && off && !s.paused && (ph === 'presnap' || ph === 'live')));
+    setVis('stick', stick.zone, !!(s && inGame && !s.paused && (ph === 'presnap' || ph === 'live')));
     setVis('juke', btn.juke, showJuke);
     setVis('sw', btn.sw, showSwitch);
     setVis('kick', btn.kick, showKick);

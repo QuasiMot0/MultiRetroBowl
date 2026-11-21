@@ -7,9 +7,10 @@ const GridSim = require('../shared/sim.js');
 
 const source = fs.readFileSync(path.join(__dirname, '../public/js/input.js'), 'utf8');
 
-function controls({ mobile = false } = {}) {
+function controls({ mobile = false, floating = false } = {}) {
   const canvas = new EventTarget();
   const stick = new EventTarget();
+  const zone = floating ? new EventTarget() : stick;
   const window = new EventTarget();
   window.GridSim = GridSim;
   const captured = new Set();
@@ -22,17 +23,20 @@ function controls({ mobile = false } = {}) {
     phase: 'live', possession: 0, canThrow: true, controlledOffId: 'QB', userDefenderId: 'LB',
     players: [qb, lb, safety], ball: { state: 'held', holder: 'QB', x: qb.x, y: qb.y }
   };
-  for (const surface of [canvas, stick]) {
+  for (const surface of new Set([canvas, stick, zone])) {
     surface.setPointerCapture = (id) => captured.add(id);
     surface.releasePointerCapture = (id) => {
       if (captured.delete(id)) emit(surface, 'lostpointercapture', { pointerId: id });
     };
   }
+  stick.style = {};
+  stick.contains = (target) => target === stick;
   stick.firstElementChild = { style: {} };
   stick.getBoundingClientRect = () => ({ left: 0, top: 0, width: 100, height: 100 });
+  if (floating) zone.getBoundingClientRect = () => ({ left: 0, top: 25, width: 200, height: 350 });
   window.matchMedia = () => ({ matches: mobile });
   vm.runInNewContext(source, {
-    window, document: { getElementById: (id) => id === 'moveStick' ? stick : null }, performance: { now: () => now },
+    window, document: { getElementById: (id) => ({ moveStick: stick, moveZone: zone })[id] }, performance: { now: () => now },
     Render: { screenToField(x, y, out) { out.x = x; out.y = y; }, pxPerYard: () => 1 }
   });
   const input = window.Input;
@@ -44,7 +48,7 @@ function controls({ mobile = false } = {}) {
       emit(canvas, type, { pointerId: id, clientX: x, clientY: y, pointerType, button: 0, isPrimary: id === 1 });
     },
     stick(type, id, x, y) {
-      emit(stick, type, { pointerId: id, clientX: x, clientY: y, pointerType: 'touch', button: 0 });
+      emit(zone, type, { pointerId: id, clientX: x, clientY: y, pointerType: 'touch', button: 0 });
     },
     key(type, code, extra = {}) { return emit(window, type, { code, ...extra }); },
     blur() { emit(window, 'blur'); }
@@ -165,6 +169,48 @@ test('S steers a defender down and Shift switches the WASD target', () => {
   c.view.userDefenderId = c.safety.id;
   c.tick();
   assert.deepEqual(c.messages.at(-1), { t: 'move', x: 48, y: 33 });
+});
+
+test('the defensive stick survives a tap to switch and releases cleanly', () => {
+  const c = controls({ mobile: true });
+  c.view.possession = 1;
+  c.view.phase = 'presnap';
+  c.stick('pointerdown', 1, 31, 50);
+  c.tick();
+  assert.deepEqual(c.messages, []);
+  c.view.phase = 'live';
+  c.tick();
+  assert.deepEqual(c.messages.at(-1), { t: 'move', x: 32, y: 25, speed: 0.5 });
+  c.pointer('pointerdown', 2, 48, 24.2);
+  c.pointer('pointerup', 2, 48, 24.2);
+  assert.deepEqual(c.messages.at(-1), { t: 'select', id: 'S1' });
+  c.view.userDefenderId = 'S1';
+  c.tick();
+  assert.deepEqual(c.messages.at(-1), { t: 'move', x: 40, y: 25, speed: 0.5 });
+  c.stick('pointercancel', 1, 31, 50);
+  assert.deepEqual(c.messages.at(-1), { t: 'stop' });
+  assert.equal(c.captured.size, 0);
+});
+
+test('touching outside the visible stick starts neutral and steers from that point', () => {
+  const c = controls({ mobile: true, floating: true });
+  c.stick('pointerdown', 1, 155, 130);
+  c.tick();
+  assert.deepEqual(c.messages.at(-1), { t: 'move', x: 30, y: 25, speed: 0 });
+  c.stick('pointermove', 1, 155, 149);
+  c.tick();
+  assert.deepEqual(c.messages.at(-1), { t: 'move', x: 30, y: 33, speed: 0.5 });
+  c.stick('pointerup', 1, 155, 149);
+  assert.deepEqual(c.messages.at(-1), { t: 'stop' });
+});
+
+test('switch takes the flight target into account when a pass is airborne', () => {
+  const c = controls();
+  c.view.possession = 1;
+  c.view.players.push({ id: 'CB1', side: 'def', x: 70, y: 25 });
+  Object.assign(c.view.ball, { state: 'air', tx: 72, ty: 25 });
+  c.key('keydown', 'ShiftLeft', { key: 'Shift' });
+  assert.deepEqual(c.messages, [{ t: 'select', id: 'CB1' }]);
 });
 
 test('pointer cancellation, blur, and phase changes clear input safely', () => {

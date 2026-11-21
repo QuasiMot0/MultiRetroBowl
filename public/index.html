@@ -56,7 +56,13 @@
       <span id="pcTimer">15</span>
     </div>
     <div id="pcSub" class="pc-sub"></div>
+    <div id="pcHelp" class="pc-help">Tap to call · Hold or press P to preview</div>
     <div id="pcCards" class="pc-cards"></div>
+    <div id="pcPreview" class="pc-preview hidden">
+      <div id="pcPreviewName" class="pc-preview-name"></div>
+      <canvas id="pcDiagram" width="520" height="228" role="img"></canvas>
+      <div id="pcLegend" class="pc-legend"></div>
+    </div>
     <div id="pcWaiting" class="pc-waiting hidden">
       <div id="pcPicked"></div>
       <div class="blink">WAITING FOR OPPONENT...</div>
@@ -65,7 +71,9 @@
 
   <!-- ===== Touch buttons ===== -->
   <div id="controls" class="ingame-only">
-    <div id="moveStick" class="hidden" role="group" aria-label="Movement thumbstick"><span></span></div>
+    <div id="moveZone" class="hidden">
+      <div id="moveStick" role="group" aria-label="Movement thumbstick"><span></span></div>
+    </div>
     <button id="btnJuke" class="ctl hidden">JUKE</button>
     <button id="btnSwitch" class="ctl hidden">SWITCH</button>
     <button id="btnKick" class="ctl big hidden">KICK!</button>
@@ -144,17 +152,18 @@
         <div>
           <h3 class="red-t">OFFENSE</h3>
           <ul>
-            <li><b>Touch:</b> use the left thumbstick to move. Drag back and release on the field with another finger to pass.</li>
+            <li><b>Touch:</b> start the thumbstick anywhere in the left quarter. Drag back and release to its right with another finger to pass.</li>
             <li><b>Keyboard and mouse:</b> move with <b>WASD</b>. Drag back with the left mouse button and release to throw.</li>
             <li>Aim the <b>X</b> near a receiver to lead him. As a runner, tap <b>JUKE</b> or press <b>Space</b> before contact.</li>
+            <li>Watch for repeated defensive calls in the play picker. Your run blockers get better leverage if the defense repeats the same call a third time.</li>
           </ul>
         </div>
         <div>
           <h3 class="blue-t">DEFENSE</h3>
           <ul>
-            <li>Pick a coverage: MAN, ZONE or BLITZ.</li>
-            <li>Drag or use <b>WASD</b> to move the defender with the yellow ring. Run into the carrier to tackle.</li>
-            <li>Tap or click another defender to select him. Use <b>SWITCH</b>, <b>Shift</b>, or <b>Space</b> to switch to the defender nearest the ball.</li>
+            <li>Hold a play card or press <b>P</b> on a focused card to preview assignments.</li>
+            <li>Start the thumbstick in the left quarter or use <b>WASD</b> to move the defender with the yellow ring. Run into the carrier to tackle.</li>
+            <li>Tap or click another defender to select him. Use <b>SWITCH</b>, <b>Shift</b>, or <b>Space</b> to switch toward the runner or the incoming pass.</li>
           </ul>
         </div>
         <div>

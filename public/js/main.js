@@ -6,11 +6,6 @@
   var Sim = window.GridSim || null;
   var STEP = 1 / 30;
   var MAX_BUF = 60;
-  // sim run speeds (yd/s) - used to predict our own player between snapshots
-  var SPEEDS = {
-    QB: 5.6, RB: 7.0, WR1: 7.0, WR2: 7.0, TE: 6.3, OL1: 5.0, OL2: 5.0,
-    DL1: 5.0, DL2: 5.0, LB: 6.3, CB1: 7.0, CB2: 7.0, S1: 7.0, S2: 7.0
-  };
 
   // ================================================================== play lists
   var FALLBACK_OFF = [
@@ -207,7 +202,8 @@
     banner: $('banner'), bannerBig: $('bannerBig'), bannerSub: $('bannerSub'),
     presnap: $('presnapTag'), hint: $('hint'),
     pc: $('playcall'), pcTitle: $('pcTitle'), pcTimer: $('pcTimer'), pcSub: $('pcSub'),
-    pcCards: $('pcCards'), pcWaiting: $('pcWaiting'), pcPicked: $('pcPicked'),
+    pcCards: $('pcCards'), pcWaiting: $('pcWaiting'), pcPicked: $('pcPicked'), pcHelp: $('pcHelp'),
+    pcPreview: $('pcPreview'), pcPreviewName: $('pcPreviewName'), pcDiagram: $('pcDiagram'), pcLegend: $('pcLegend'),
     paused: $('pausedOverlay'), pausedMsg: $('pausedMsg'), pausedQuit: $('btnPausedQuit'),
     pauseNote: $('pauseNote'),
     toast: $('toast')
@@ -441,7 +437,7 @@
   onClick('btnQuit', function () { exitToMenu(); });
   onClick('btnPausedQuit', function () { exitToMenu(); });
   window.addEventListener('keydown', function (e) {
-    if (e.key !== 'Escape' || S.mode === 'menu') return;
+    if (e.defaultPrevented || e.key !== 'Escape' || S.mode === 'menu') return;
     if (S.menuOpen) closePause(); else openPause();
   });
 
@@ -792,10 +788,10 @@
     var st = Input.steer;
     var steering = st.active && st.id === id;
     if (steering) {
-      var runSpeed = SPEEDS[id] || 6;
+      var runSpeed = (Sim && Sim.playerSpeed(id)) || 6;
       var spd = runSpeed * st.speed * (vp.juking ? 1.35 : 1);
       if (Sim && Sim.steer) {
-        var accel = runSpeed / Sim.HUMAN_ACCEL_TIME * (vp.juking ? 2 : 1);
+        var accel = runSpeed / (off ? Sim.HUMAN_ACCEL_TIME : Sim.DEFENDER_ACCEL_TIME) * (vp.juking ? 2 : 1);
         Sim.steer(pred, st.x, st.y, spd, accel, dt, 0.3);
       } else {
         var dx = st.x - pred.x, dy = st.y - pred.y, d = Math.hypot(dx, dy);
@@ -854,7 +850,78 @@
   }
 
   var pcKey = '';
+  var pcPress = null, pcPreviewCard = null, pcIgnoredClick = null;
+
+  function showPlayPreview(card, play, offense) {
+    var s = S.view;
+    if (!Sim || !s || s.phase !== 'playcall' || S.menuOpen || s.paused || S.localPick || (s.picked && s.picked[S.myTeam])) return;
+    var paths = Sim.playPreview(s, play.id);
+    if (!paths.length) return;
+    pcPreviewCard = card;
+    setText(el.pcPreviewName, play.name);
+    setText(el.pcLegend, offense ? 'Solid routes and runs · Dashed blocks' : 'Blue zones · Purple man coverage · Orange rush');
+    el.pcDiagram.setAttribute('aria-label', play.name + '. ' + paths.map(function (path) {
+      return path.id + ' ' + (path.target ? 'covers ' + path.target : path.kind);
+    }).join(', '));
+    Render.drawPlayDiagram(el.pcDiagram, 10 + s.ballOn, paths, offense);
+    setShown(el.pcPreview, true);
+  }
+
+  function hidePlayPreview() {
+    pcPreviewCard = null;
+    setShown(el.pcPreview, false);
+  }
+
+  function clearPlayPress() {
+    if (!pcPress) return;
+    clearTimeout(pcPress.timer);
+    pcPress = null;
+  }
+
+  function bindPlayPreview(card, play, offense, special) {
+    card.addEventListener('pointerdown', function (e) {
+      if (e.button !== 0 || pcPress) return;
+      pcIgnoredClick = null;
+      hidePlayPreview();
+      if (special) return;
+      pcPress = { id: e.pointerId, x: e.clientX, y: e.clientY };
+      pcPress.timer = setTimeout(function () {
+        pcIgnoredClick = card;
+        showPlayPreview(card, play, offense);
+      }, 320);
+      try { card.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    });
+    card.addEventListener('pointermove', function (e) {
+      if (!pcPress || e.pointerId !== pcPress.id) return;
+      if (Math.hypot(e.clientX - pcPress.x, e.clientY - pcPress.y) <= 10) return;
+      pcIgnoredClick = card;
+      clearPlayPress();
+      hidePlayPreview();
+    });
+    function finish(e) {
+      if (!pcPress || e.pointerId !== pcPress.id) return;
+      if (e.type !== 'pointerup') pcIgnoredClick = card;
+      clearPlayPress();
+      hidePlayPreview();
+    }
+    card.addEventListener('pointerup', finish);
+    card.addEventListener('pointercancel', finish);
+    card.addEventListener('lostpointercapture', finish);
+    if (!special) {
+      card.addEventListener('keydown', function (e) {
+        if (e.repeat || (e.key === 'Escape' ? pcPreviewCard !== card : e.key.toLowerCase() !== 'p')) return;
+        e.preventDefault();
+        if (pcPreviewCard === card) hidePlayPreview();
+        else if (e.key !== 'Escape') showPlayPreview(card, play, offense);
+      });
+      card.addEventListener('blur', function () { if (pcPreviewCard === card && !pcPress) hidePlayPreview(); });
+    }
+  }
+
   function buildCards(offense, fourth) {
+    clearPlayPress();
+    hidePlayPreview();
+    pcIgnoredClick = null;
     var list = offense ? OFF_PLAYS : DEF_PLAYS;
     var frag = document.createDocumentFragment();
     for (var i = 0; i < list.length; i++) {
@@ -867,18 +934,22 @@
       var nm = document.createElement('div'); nm.className = 'nm'; nm.textContent = p.name;
       var ds = document.createElement('div'); ds.className = 'ds'; ds.textContent = p.desc;
       card.appendChild(nm); card.appendChild(ds);
+      bindPlayPreview(card, p, offense, special);
       card.addEventListener('click', onPick);
       frag.appendChild(card);
     }
     el.pcCards.innerHTML = '';
     el.pcCards.appendChild(frag);
+    el.pcCards.scrollTop = 0;
   }
   function onPick(e) {
     e.preventDefault();
+    if (e.detail && e.currentTarget === pcIgnoredClick) return;
+    hidePlayPreview();
     Sound.unlock();
     var id = e.currentTarget.getAttribute('data-id');
     var s = S.latest;
-    if (!s || s.phase !== 'playcall' || S.localPick) return;
+    if (!s || s.phase !== 'playcall' || S.menuOpen || s.paused || S.localPick || (s.picked && s.picked[S.myTeam])) return;
     S.localPick = id;
     Sound.click();
     sendInput({ t: 'pick', play: id });
@@ -931,7 +1002,12 @@
       var key = (off ? 'o' : 'd') + (s.fourthDown ? '4' : '');
       if (key !== pcKey) { pcKey = key; buildCards(off, !!s.fourthDown); }
       var picked = !!(S.localPick || (s.picked && s.picked[S.myTeam]));
+      if (picked || S.menuOpen || s.paused || S.netDown || S.oppLeft || S.oppQuit) {
+        clearPlayPress();
+        hidePlayPreview();
+      }
       setClass(el.pcCards, 'locked', picked);
+      setShown(el.pcHelp, !picked);
       setShown(el.pcWaiting, picked);
       if (picked) setText(el.pcPicked, S.localPick ? 'YOU PICKED ' + playName(S.localPick).toUpperCase() : 'PLAY LOCKED IN');
       setText(el.pcTitle, off ? 'OFFENSE · PICK A PLAY' : 'DEFENSE · PICK A COVERAGE');
@@ -941,9 +1017,14 @@
       var sub = '';
       if (s.message) sub = String(s.message).toUpperCase() + (s.sub ? ' - ' + String(s.sub).toUpperCase() : '');
       if (off && s.fourthDown) sub = (sub ? sub + ' \u00b7 ' : '') + '4TH DOWN: GO FOR IT, PUNT OR KICK';
+      if (off && s.lastDefense && s.lastDefense.streak >= 2) {
+        sub = (sub ? sub + ' \u00b7 ' : '') + 'LAST ' + s.lastDefense.streak + ' DEFENSIVE CALLS: ' + playName(s.lastDefense.play).toUpperCase();
+      }
       if (s.picked && s.picked[1 - S.myTeam] && !picked) sub = (sub ? sub + ' \u00b7 ' : '') + (S.mode === 'cpu' ? 'CPU IS READY' : 'OPPONENT IS READY');
       setText(el.pcSub, sub);
     } else {
+      clearPlayPress();
+      hidePlayPreview();
       pcKey = '';          // rebuild fresh cards (no stale "picked" state) next playcall
     }
 
@@ -966,7 +1047,7 @@
       if (off) {
         if (Input.canThrow(s)) hint = touch ? 'THUMBSTICK TO MOVE · DRAG BACK & RELEASE TO THROW' : 'WASD TO MOVE · DRAG BACK & RELEASE TO THROW';
         else if (Input.controlledCarrier(s)) hint = touch ? 'THUMBSTICK TO RUN · JUKE BEFORE CONTACT' : 'WASD TO RUN · SPACE TO JUKE';
-      } else hint = touch ? 'DRAG TO MOVE · TAP A DEFENDER TO SWITCH' : 'WASD TO MOVE · SHIFT TO SWITCH';
+      } else hint = touch ? 'THUMBSTICK TO MOVE · TAP A DEFENDER TO SWITCH' : 'WASD TO MOVE · SHIFT TO SWITCH';
     } else if (ph === 'kick') {
       hint = off ? 'TAP KICK WHEN THE NEEDLE IS IN THE GREEN' : 'OPPONENT IS KICKING...';
     } else if (ph === 'presnap' && !off) {
@@ -1015,7 +1096,7 @@
   function isField(t) { return t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA'); }
   document.addEventListener('touchmove', function (e) {
     var t = e.target;
-    if (t && t.closest && t.closest('.screen')) return;    // menus may scroll
+    if (t && t.closest && t.closest('.screen, .pc-cards')) return;
     e.preventDefault();
   }, { passive: false });
   document.addEventListener('gesturestart', function (e) { e.preventDefault(); });

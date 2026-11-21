@@ -174,9 +174,82 @@ test('running behind the called blocks gains yards against all three defensive c
       gains.push(gainOf(g, start, S.snapshot(g).events));
     }
     assert.ok(gains.filter((gain) => gain > 0).length >= 45, `${defense} allows consistent gains in the called lane`);
+    assert.ok(gains.some((gain) => gain < 4), `${defense} can stop the called lane short of four yards`);
     const mean = gains.reduce((sum, gain) => sum + gain, 0) / gains.length;
     assert.ok(mean >= 2.25 && mean <= 6.5, `${defense} allowed ${mean.toFixed(2)} yards per run`);
   }
+});
+
+test('an early run fit can stop a handoff for a loss', () => {
+  const g = S.createGame({ seed: 42 });
+  S.input(g, 0, { t: 'pick', play: 'dive' });
+  S.input(g, 1, { t: 'pick', play: 'fire' });
+  until(g, (x) => x.phase === 'live');
+  until(g, (x) => x.phase !== 'live');
+  assert.equal(g.handedOff, true);
+  assert.ok(g.events.includes('tackle'));
+  assert.ok(gainOf(g, g.ballOn, g.events) < 0);
+});
+
+test('each run has a favorable defensive matchup', () => {
+  const cases = [
+    ['run', 'fire', 'zero', 6],
+    ['dive', 'quarters', 'fire', 2],
+    ['sweep', 'quarters', 'edge', 7]
+  ];
+  function meanGain(play, defense) {
+    const gains = [];
+    for (let seed = 1; seed <= 48; seed++) {
+      const g = S.createGame({ seed });
+      S.input(g, 0, { t: 'pick', play });
+      S.input(g, 1, { t: 'pick', play: defense });
+      until(g, (x) => x.phase === 'live');
+      until(g, (x) => x.phase !== 'live');
+      gains.push(gainOf(g, g.ballOn, g.events));
+    }
+    return gains.reduce((a, b) => a + b, 0) / gains.length;
+  }
+  for (const [play, favorable, tough, minimum] of cases) {
+    const gain = meanGain(play, favorable);
+    assert.ok(gain >= minimum, `${play} should be useful against ${favorable}: ${gain}`);
+    assert.ok(gain - meanGain(play, tough) >= 2, `${play} should have a better matchup against ${favorable} than ${tough}`);
+  }
+});
+
+test('a third straight defensive call gives runners a chance to break a longer gain', () => {
+  function runAfterPasses(seed, secondCall) {
+    const g = S.createGame({ seed });
+    for (const defense of ['blitz', secondCall]) {
+      S.input(g, 0, { t: 'pick', play: 'slant' });
+      S.input(g, 1, { t: 'pick', play: defense });
+      until(g, (x) => x.phase === 'live');
+      const qb = P(g, 'QB');
+      S.input(g, 0, { t: 'throw', x: qb.x - 25, y: 0 });
+      until(g, (x) => x.phase === 'playcall');
+      assert.ok(g.events.includes('incomplete'));
+      S.snapshot(g);
+    }
+    S.input(g, 0, { t: 'pick', play: 'run' });
+    S.input(g, 1, { t: 'pick', play: 'blitz' });
+    const beforeSnap = S.snapshot(g);
+    assert.equal(beforeSnap.defPlay, null);
+    assert.deepEqual(beforeSnap.lastDefense, { play: secondCall, streak: secondCall === 'blitz' ? 2 : 1 });
+    until(g, (x) => x.phase === 'live');
+    assert.deepEqual(S.snapshot(g).lastDefense, { play: 'blitz', streak: secondCall === 'blitz' ? 3 : 1 });
+    until(g, (x) => x.phase !== 'live');
+    return gainOf(g, g.ballOn, g.events);
+  }
+
+  let repeatedLong = 0, variedLong = 0, repeatedShort = 0;
+  for (let seed = 1; seed <= 48; seed++) {
+    const repeated = runAfterPasses(seed, 'blitz');
+    const varied = runAfterPasses(seed, 'man');
+    if (repeated >= 10) repeatedLong++;
+    if (varied >= 10) variedLong++;
+    if (repeated < 4) repeatedShort++;
+  }
+  assert.ok(repeatedLong >= variedLong + 8, `repeated blitzes yielded ${repeatedLong} long runs vs ${variedLong} after mixing calls`);
+  assert.ok(repeatedShort > 0, 'the repeated call can still stop a run early');
 });
 
 test('human defender: running onto the carrier makes the tackle', () => {

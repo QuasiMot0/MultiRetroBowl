@@ -40,7 +40,7 @@ Tip: on iOS use Share → "Add to Home Screen" (Android: menu → "Add to Home s
 
 ## Controls
 
-- **Touch** — Use the left thumbstick on offense. Push it farther to move faster, and drag back and release on the field with a second finger to pass. Drag on the field to steer a defender.
+- **Touch** — Start the thumbstick anywhere in the left quarter of the screen on offense or defense. Push it farther to move faster. Drag back and release to its right with a second finger to pass, or tap a defender to switch on defense.
 - **Keyboard and mouse** — Use **WASD** to move. Hold the left mouse button, drag back, and release to pass. Use **Space** to juke, switch defenders, or kick, depending on the play. **Shift** also switches defenders.
 
 On offense, each route arrow matches the color of the player's tag. WR1 is pink, WR2 is cyan, TE is lavender, and RB is gold. Dashes show where a player runs before blocking.
@@ -82,3 +82,5 @@ test/              node:test suites (npm test)
 Online rooms pause when a player disconnects and are kept for 5 minutes so they can reconnect
 (rejoin happens automatically). See [AGENTS.md](AGENTS.md) for code entry points and test coverage,
 and [PLAN.md](PLAN.md) for the original design and protocol outline.
+
+See the [balance reference](BALANCE.md) for the current playbooks, run matchups, and how to retest them after changing the sim.

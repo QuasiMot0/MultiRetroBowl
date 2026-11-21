@@ -232,12 +232,16 @@ canvas#game {
 }
 #pcTimer.urgent { background: #ff6b5e; }
 .pc-sub { font-size: 8px; color: var(--dim); margin: 8px 0 10px; min-height: 8px; text-align: center; }
+.pc-help { font-size: 8px; line-height: 1.6; margin-bottom: 9px; text-align: center; }
 .pc-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
   width: 100%;
   max-width: 860px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 4px 7px;
 }
 .card {
   text-align: left;
@@ -246,9 +250,10 @@ canvas#game {
   border: 3px solid #fff;
   box-shadow: 0 5px 0 #000;
   padding: 10px 10px 12px;
-  min-height: 78px;
+  min-height: 70px;
   cursor: pointer;
-  touch-action: manipulation;
+  touch-action: pan-y;
+  user-select: none;
 }
 .card .nm { font-size: 13px; color: var(--yellow); margin-bottom: 8px; text-transform: uppercase; }
 .card .ds { font-size: 8px; line-height: 1.55; color: #cfd5f3; }
@@ -256,20 +261,49 @@ canvas#game {
 .card.special { background: #4a2a12; border-color: #ffad42; }
 .card.def { background: #12304f; }
 .card.picked { background: #1f5a2e; border-color: #7dff9a; }
+.card:focus-visible { outline: 2px solid var(--yellow); outline-offset: 1px; }
 .pc-cards.locked .card:not(.picked) { opacity: 0.3; }
 .pc-cards.locked .card { pointer-events: none; }
+.pc-preview {
+  position: absolute;
+  z-index: 1;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(520px, 86vw);
+  padding: 10px;
+  border: 3px solid var(--yellow);
+  background: #101831;
+  box-shadow: 0 6px 0 #000, 0 0 0 100vmax rgba(4, 7, 18, 0.6);
+  text-align: center;
+  pointer-events: none;
+}
+.pc-preview-name { font-size: 13px; color: var(--yellow); margin-bottom: 7px; text-transform: uppercase; }
+.pc-preview canvas { display: block; width: 100%; height: auto; max-height: 57vh; object-fit: contain; }
+.pc-legend { margin-top: 7px; font-size: 8px; line-height: 1.6; }
 .pc-waiting { margin-top: 12px; text-align: center; font-size: 10px; line-height: 2; text-shadow: 2px 2px 0 #000; }
 #pcPicked { color: #7dff9a; }
 
 /* ------------------------------------------------------------------ controls */
 #controls { position: absolute; z-index: 15; inset: 0; pointer-events: none; }
+#moveZone {
+  position: absolute;
+  top: var(--hudh);
+  bottom: 0;
+  left: 0;
+  width: 25%;
+  overflow: hidden;
+  background: linear-gradient(90deg, rgba(5,10,24,0.22), transparent);
+  pointer-events: auto;
+  touch-action: none;
+}
 #moveStick {
   position: absolute;
   display: grid;
   place-items: center;
-  left: calc(var(--sal) + 18px);
+  left: min(calc(var(--sal) + 18px), 18%);
   bottom: calc(var(--sab) + 18px);
-  width: clamp(82px, 23vh, 112px);
+  width: min(clamp(82px, 23vh, 112px), 82%);
   aspect-ratio: 1;
   border: 3px solid rgba(255,255,255,0.66);
   border-radius: 50%;
@@ -503,7 +537,9 @@ input.txt.code { font-size: 28px; text-align: center; letter-spacing: 10px; }
   .panel { padding: 14px; gap: 9px; }
   .btn { padding: 11px 10px; font-size: 11px; }
   .menu-left, .menu-right { gap: 9px; }
-  .card { min-height: 64px; padding: 8px; }
+  .pc-sub { margin: 4px 0; }
+  .pc-help { margin-bottom: 4px; }
+  .card { min-height: 55px; padding: 6px; }
   .card .nm { font-size: 11px; margin-bottom: 6px; }
   .card .ds { font-size: 7px; }
   .pc-cards { gap: 8px; }
@@ -519,4 +555,8 @@ input.txt.code { font-size: 28px; text-align: center; letter-spacing: 10px; }
 }
 @media (max-width: 560px) {
   .team .name { display: none; }
+  .pc-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 400px) {
+  .pc-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

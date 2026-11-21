@@ -599,6 +599,81 @@
     ctx.drawImage(lo, 0, 0, bufW, bufH, 0, 0, bufW * P, bufH * P);
   }
 
+  function drawPlayDiagram(canvas, line, paths, offense) {
+    var c = canvas.getContext('2d'), w = canvas.width, h = canvas.height;
+    var min = Math.min(line - 8, 103), max = Math.max(line + 25, 1);
+    paths.forEach(function (path) {
+      path.points.forEach(function (pt) { max = Math.max(max, pt.x + (path.radius || 0) + 2); });
+    });
+    var sx = (w - 42) / (max - min), sy = (h - 28) / FW;
+    function x(yards) { return 21 + (yards - min) * sx; }
+    function y(yards) { return 14 + yards * sy; }
+    function color(path) {
+      return offense ? ROUTE_COLORS[path.id] : { zone: '#7ecbff', man: '#e4b9ff', rush: '#ffb36d' }[path.kind];
+    }
+
+    c.clearRect(0, 0, w, h);
+    c.fillStyle = '#214937';
+    c.fillRect(0, 0, w, h);
+    c.lineWidth = 1;
+    c.strokeStyle = 'rgba(255,255,255,0.20)';
+    for (var stripe = Math.ceil(min / 5) * 5; stripe < max; stripe += 5) {
+      c.beginPath(); c.moveTo(x(stripe), 0); c.lineTo(x(stripe), h); c.stroke();
+    }
+    c.strokeStyle = '#f3e2a1';
+    c.beginPath(); c.moveTo(x(line), 0); c.lineTo(x(line), h); c.stroke();
+
+    paths.forEach(function (path) {
+      if (path.kind !== 'zone') return;
+      var end = path.points[1];
+      c.beginPath();
+      c.ellipse(x(end.x), y(end.y), path.radius * sx, path.radius * sy, 0, 0, Math.PI * 2);
+      c.fillStyle = 'rgba(126,203,255,0.11)'; c.fill();
+      c.strokeStyle = 'rgba(126,203,255,0.40)'; c.stroke();
+    });
+
+    c.font = 'bold 12px monospace';
+    c.lineJoin = 'round';
+    c.lineCap = 'round';
+    paths.forEach(function (path) {
+      var pts = path.points;
+      var end = pts[pts.length - 1], prev = pts[pts.length - 2];
+      var ex = x(end.x), ey = y(end.y);
+      var angle = Math.atan2(ey - y(prev.y), ex - x(prev.x));
+      c.strokeStyle = color(path);
+      c.lineWidth = 2.5;
+      c.setLineDash(path.kind === 'block' ? [4, 4] : []);
+      c.beginPath(); c.moveTo(x(pts[0].x), y(pts[0].y));
+      pts.slice(1).forEach(function (pt) { c.lineTo(x(pt.x), y(pt.y)); });
+      c.stroke();
+      c.setLineDash([]);
+      c.beginPath();
+      if (path.kind === 'block') {
+        c.moveTo(ex + Math.sin(angle) * 5, ey - Math.cos(angle) * 5);
+        c.lineTo(ex - Math.sin(angle) * 5, ey + Math.cos(angle) * 5);
+      } else {
+        c.moveTo(ex - 8 * Math.cos(angle - 0.55), ey - 8 * Math.sin(angle - 0.55));
+        c.lineTo(ex, ey);
+        c.lineTo(ex - 8 * Math.cos(angle + 0.55), ey - 8 * Math.sin(angle + 0.55));
+      }
+      c.stroke();
+      if (path.target) {
+        c.fillStyle = c.strokeStyle;
+        c.fillText(path.target, ex - 26, ey - 6);
+      }
+    });
+
+    paths.forEach(function (path) {
+      var start = path.points[0], px = x(start.x), py = y(start.y);
+      c.fillStyle = color(path);
+      c.beginPath(); c.arc(px, py, 4, 0, 2 * Math.PI); c.fill();
+      var labelY = py + (path.id === 'DL1' ? -6 : 14);
+      c.strokeStyle = '#17352a'; c.lineWidth = 3;
+      c.strokeText(path.id, px + 6, labelY);
+      c.fillText(path.id, px + 6, labelY);
+    });
+  }
+
   function drawRoutes(routes, ox, oy) {
     if (!routes.length) return null;
     var colors = {};
@@ -735,6 +810,7 @@
     resize: resize,
     setTopInset: setTopInset,
     draw: draw,
+    drawPlayDiagram: drawPlayDiagram,
     screenToField: screenToField,
     fieldToScreen: fieldToScreen,
     pxPerYard: pxPerYard,

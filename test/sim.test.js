@@ -80,8 +80,8 @@ test('exports the documented API', () => {
     assert.strictEqual(typeof GridSim[fn], 'function', fn);
   }
   const offIds = GridSim.OFFENSE_PLAYS.map((p) => p.id);
-  assert.deepStrictEqual(offIds, ['slant', 'deep', 'screen', 'run', 'punt', 'fg']);
-  assert.deepStrictEqual(GridSim.DEFENSE_PLAYS.map((p) => p.id), ['man', 'zone', 'blitz']);
+  assert.deepStrictEqual(offIds, ['slant', 'stick', 'mesh', 'deep', 'post', 'flood', 'screen', 'tunnel', 'swing', 'run', 'dive', 'sweep', 'punt', 'fg']);
+  assert.deepStrictEqual(GridSim.DEFENSE_PLAYS.map((p) => p.id), ['man', 'robber', 'zero', 'zone', 'cover3', 'quarters', 'blitz', 'edge', 'fire']);
   for (const p of GridSim.OFFENSE_PLAYS.concat(GridSim.DEFENSE_PLAYS)) {
     assert.strictEqual(typeof p.name, 'string');
     assert.strictEqual(typeof p.desc, 'string');
